@@ -134,6 +134,7 @@ input,select,textarea{background:var(--paper)}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--glass:rgba(34,38,50,.9)}}
 :root[data-theme="dark"]{--glass:rgba(34,38,50,.9)}
 summary.sum{min-height:44px;cursor:pointer;padding:10px 0;touch-action:manipulation}summary.sum:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.workspace-tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:12px 0}.workspace-tabs .chip{min-width:0;padding-inline:8px}.workspace-tabs .chip span{display:block;font-size:.7rem;font-weight:400;margin-top:1px}.workspace-summary{margin-bottom:12px}.workspace-summary p{margin:0;font-size:.86rem;color:var(--sub)}
 </style>
 
 <div class="wrap" id="main">
@@ -143,6 +144,8 @@ summary.sum{min-height:44px;cursor:pointer;padding:10px 0;touch-action:manipulat
     <p class="m" style="margin:0 0 10px;font-size:.9rem;line-height:1.7">登録は不要です。記録と写真は、このブラウザの中だけに保存されます。別の端末には同期されず、他の人にも見えません。ブラウザのデータを消したり機種変更をしたりすると消えるので、ときどき設定の「記録をコピー」で残してください。</p>
     <button class="btn sm" id="seenBtn">わかった</button></div>
   <div class="sec" id="storageNotice" role="status">記録を読み込んでいます…</div>
+  <nav class="workspace-tabs" id="workspaceTabs" aria-label="管理する内容"></nav>
+  <div class="sec workspace-summary" id="workspaceSummary"></div>
   <button class="chip" id="statsToggle" style="margin-bottom:8px"></button>
   <div class="stats" id="stats"></div>
   <div class="bar" id="filters"></div>
@@ -194,14 +197,15 @@ const today=()=>new Date(Date.now()+9*3600e3).toISOString().slice(0,10);
 function undoToast(t,fn){const e=$("#toast");e.textContent=t+" ";const b=document.createElement("button");b.textContent="元に戻す";b.style.cssText="margin-left:8px;border:0;border-radius:99px;padding:6px 14px;font:inherit;background:var(--accent);color:#fff;cursor:pointer";b.onclick=async()=>{e.hidden=true;await fn()};e.appendChild(b);e.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>e.hidden=true,8000)}
 function toast(t){const e=$("#toast");e.textContent=t;e.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>e.hidden=true,2200)}
 const SK="runnerlog-settings";
-const S=Object.assign({theme:"auto",stats:true,stockSum:true,hours:true,newStatus:"stock",sort:"status",bkDays:30},(()=>{try{return JSON.parse(localStorage.getItem(SK)||"{}")}catch(e){return{}}})());
+const S=Object.assign({theme:"auto",stats:true,stockSum:true,hours:true,newStatus:"stock",sort:"status",bkDays:30,workspace:"inventory"},(()=>{try{return JSON.parse(localStorage.getItem(SK)||"{}")}catch(e){return{}}})());
 const saveS=()=>{try{localStorage.setItem(SK,JSON.stringify(S))}catch(e){}};
 const hostTheme=document.documentElement.getAttribute("data-theme");
 function applyTheme(){const r=document.documentElement;const t=S.theme==="auto"?hostTheme:S.theme;t?r.setAttribute("data-theme",t):r.removeAttribute("data-theme")}
 applyTheme();const imgUrl=id=>assets?.url(id)||"";
 
 function renderStats(){
-  $("#stats").hidden=!S.stats;$("#statsToggle").textContent=(S.stats?"▾":"▸")+" 集計";
+  $("#statsToggle").hidden=S.workspace!=="inventory";
+  $("#stats").hidden=S.workspace!=="inventory"||!S.stats;$("#statsToggle").textContent=(S.stats?"▾":"▸")+" 集計";
   const c=s=>kits.filter(k=>k.status===s);
   const stockSum=c("stock").reduce((a,k)=>a+(+k.price||0),0);
   const mins=logs.reduce((a,l)=>a+(+l.minutes||0),0);
@@ -212,25 +216,44 @@ function renderStats(){
 }
 function renderFilters(){
   const opts=[["all","すべて"],...Object.entries(ST)];
+  $("#filters").hidden=S.workspace!=="inventory";
   $("#filters").innerHTML=opts.map(([k,v])=>`<button class="chip" data-f="${k}" aria-pressed="${filter===k}">${v} <span class="num">${k==="all"?kits.length:kits.filter(x=>x.status===k).length}</span></button>`).join("");
+}
+function renderWorkspace(){
+  const ideaLogs=logs.filter(l=>["memo","try","decide"].includes(rtype(l)));
+  const tabs=[["inventory","在庫","積み・欲しい"],["progress","進捗","製作・完成"],["ideas","構想","案・方針"]];
+  $("#workspaceTabs").innerHTML=tabs.map(([id,label,sub])=>`<button class="chip" data-workspace="${id}" aria-pressed="${S.workspace===id}">${label}<span>${sub}</span></button>`).join("");
+  const owned=kits.filter(k=>k.status!=="wish").length,missingNext=kits.filter(k=>k.status==="building"&&!k.next).length;
+  const planned=kits.filter(k=>k.theme||k.want||k.notWant||k.refs).length,candidates=ideaLogs.filter(l=>l.idea==="cand").length,adopted=ideaLogs.filter(l=>l.idea==="adopt").length;
+  const summaries={
+    inventory:`<h3>在庫管理</h3><p>所持 ${owned}箱・積み ${kits.filter(k=>k.status==="stock").length}箱・欲しい ${kits.filter(k=>k.status==="wish").length}件。名前、型式、JAN、店で検索できます。</p>`,
+    progress:`<h3>進捗管理</h3><p>製作中 ${kits.filter(k=>k.status==="building").length}件・完成 ${kits.filter(k=>k.status==="done").length}件${missingNext?`・次の作業が未設定 ${missingNext}件`:""}。次にやることと最終記録を一覧で確認できます。</p>`,
+    ideas:`<h3>構想管理</h3><p>製作プランあり ${planned}件・アイデア候補 ${candidates}件・採用 ${adopted}件。考えた案と現在の方針をキットごとに整理できます。</p>`
+  };
+  $("#workspaceSummary").innerHTML=summaries[S.workspace];
+  $("#q").placeholder=S.workspace==="ideas"?"キット名・構想・参考資料を探す":S.workspace==="progress"?"製作中・完成したキットを探す":"キット名・型式・JAN・グレード・ショップで探す";
 }
 function renderList(){
   const q=$("#q").value.trim();
   const order={building:0,stock:1,wish:2,done:3};
-  const rows=kits.filter(k=>(filter==="all"||k.status===filter)&&(!q||[k.name,k.model,k.jan,k.grade,k.shop,k.memo].join(" ").toLowerCase().includes(q.toLowerCase())))
+  const hasIdea=k=>k.theme||k.want||k.notWant||k.refs||logs.some(l=>l.kitId===k.id&&["memo","try","decide"].includes(rtype(l)));
+  const inWorkspace=k=>S.workspace==="inventory"?(filter==="all"||k.status===filter):S.workspace==="progress"?["building","done"].includes(k.status):hasIdea(k);
+  const rows=kits.filter(k=>inWorkspace(k)&&(!q||[k.name,k.model,k.jan,k.grade,k.shop,k.memo,k.theme,k.want,k.notWant,k.refs].join(" ").toLowerCase().includes(q.toLowerCase())))
     .sort((a,b)=>S.sort==="name"?String(a.name).localeCompare(String(b.name),"ja"):S.sort==="bought"?String(b.bought||"").localeCompare(String(a.bought||"")):(order[a.status]-order[b.status])||String(b.bought||"").localeCompare(String(a.bought||"")));
-  if(!rows.length){$("#list").innerHTML=`<div class="empty">${kits.length?"条件に合うキットはありません。":"まだキットがありません。「＋ キットを追加」から登録できます。"}</div>`;return}
+  if(!rows.length){const message=S.workspace==="ideas"?"まだ構想がありません。製作ノートで作りたい姿やメモを残すと、ここに並びます。":S.workspace==="progress"?"製作中・完成のキットはありません。在庫からキットを開き、作業を記録すると製作中になります。":kits.length?"条件に合うキットはありません。":"まだキットがありません。「＋ キットを追加」から登録できます。";$("#list").innerHTML=`<div class="empty">${message}</div>`;return}
   $("#list").innerHTML=rows.map(k=>{
     const ph=(k.photos||[])[0];
     const h=logs.filter(l=>l.kitId===k.id).reduce((a,l)=>a+(+l.minutes||0),0);
     const lastLog=logs.filter(l=>l.kitId===k.id).map(l=>l.date).sort().pop();
     const own=k.status==="wish"?0:kits.filter(x=>x.name===k.name&&x.status!=="wish").length;
-    const meta=[k.model,k.grade,own>1?"所持"+own+"個":"",k.status==="wish"?(k.price?"予算 "+yen(k.price):""):yen(k.price),k.bought&&k.status!=="wish"?k.bought+" 購入":"",h?(h/60).toFixed(1)+"h 作業":""].filter(Boolean).join(" · ");
+    const ideaCount=logs.filter(l=>l.kitId===k.id&&["memo","try","decide"].includes(rtype(l))).length;
+    const normalMeta=[k.model,k.grade,own>1?"所持"+own+"個":"",k.status==="wish"?(k.price?"予算 "+yen(k.price):""):yen(k.price),k.bought&&k.status!=="wish"?k.bought+" 購入":"",h?(h/60).toFixed(1)+"h 作業":""];
+    const meta=(S.workspace==="ideas"?[k.grade,k.theme,ideaCount?"構想メモ "+ideaCount+"件":""]:normalMeta).filter(Boolean).join(" · ");
     return `<button class="kit" data-id="${k.id}">${ph?`<img class="thumb" src="${imgUrl(ph)}" alt="">`:`<span class="thumb">${esc(k.grade||"KIT")}</span>`}
       <span style="min-width:0"><span class="t">${esc(k.name)}</span><br><span class="m num">${esc(meta)}</span>${k.status==="building"&&(k.next||lastLog)?`<br><span class="m">${k.next?"次："+esc(k.next):""}${lastLog?(k.next?" · ":"")+"最終 "+esc(lastLog):""}</span>`:""}</span>
       <span class="pill s-${k.status}">${ST[k.status]||"?"}</span></button>`}).join("");
 }
-function render(){renderStats();renderFilters();renderList();if(openId&&openId!=="__new")renderNote()}
+function render(){renderWorkspace();renderStats();renderFilters();renderList();if(openId&&openId!=="__new")renderNote()}
 
 function field(id,label,val,type="text",ph=""){return `<label>${label}<input id="${id}" type="${type}"${type==="number"?' inputmode="decimal" min="0" step="any"':""}${ph?` placeholder="${esc(ph)}"`:""} value="${esc(val)}"></label>`}
 function area(id,label,val,ph=""){return `<label>${label}<textarea id="${id}" placeholder="${esc(ph)}">${esc(val)}</textarea></label>`}
@@ -373,11 +396,13 @@ async function saveRecord(){
 }
 document.addEventListener("click",async e=>{
   const t=e.target.closest("button,[data-id]");if(!t)return;
-  if(t.dataset.f){filter=t.dataset.f;renderFilters();renderList()}
+  if(t.dataset.workspace){S.workspace=t.dataset.workspace;saveS();render()}
+  else if(t.dataset.f){filter=t.dataset.f;renderFilters();renderList()}
   else if(t.classList.contains("kit"))openNote(t.dataset.id);
   else if(t.id==="back"){
     if(!$("#dirty").hidden&&t.dataset.sure!=="1"){t.dataset.sure="1";t.textContent="未保存です。もう一度押すと破棄";return}
-    if(t.dataset.sure==="1")clearDraft(openId);closeNote();
+    if(t.dataset.sure==="1")clearDraft(openId);
+    closeNote();
   }
   else if(t.id==="save")saveKit();
   else if(t.id==="dup"){
