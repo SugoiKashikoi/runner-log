@@ -580,25 +580,6 @@ function bkCheck(){
   w.hidden=!due;$("#bkBanner").hidden=!due;
   if(!w.hidden)w.textContent=LS.get("runnerlog-backup")?`最後のバックアップから${days}日たっています。記録をコピーして残しましょう。`:`まだバックアップをしていません。記録をコピーして残しましょう。`;
 }
-document.addEventListener("click",async e=>{
-  const t=e.target.closest("#oldBk");if(!t)return;
-  const ta=$("#bkText");
-  if(t.id==="bkCopy"){
-    const data=JSON.stringify({app:"runnerlog",v:1,kits:kits.map(({photos,...k})=>k),logs});
-    ta.value=data;
-    try{await navigator.clipboard.writeText(data);toast("記録をコピーしました")}catch(err){ta.focus();ta.select();toast("枠の中の文字を全部コピーしてください")}
-    LS.set("runnerlog-backup",String(Date.now()));bkCheck();
-  }else{
-    let d;try{d=JSON.parse(ta.value)}catch(err){return toast("記録の形式が正しくありません")}
-    if(!d||d.app!=="runnerlog"||!Array.isArray(d.kits))return toast("ランナーログの記録ではありません");
-    if(t.dataset.sure!=="1"){t.dataset.sure="1";t.textContent=`${d.kits.length}件を追加します。もう一度押すと実行`;return}
-    t.dataset.sure="";t.textContent="貼り付けた記録を復元";
-    const map={};
-    for(const {id,...k} of d.kits){const r=await db.collection("kits").add({...k,photos:[]});map[id]=r.id}
-    for(const {id,kitId,photos,...l} of (d.logs||[])){if(map[kitId]){const lp=await restorePhotos(photos,d.blobs);await db.collection("logs").add({...l,...(lp.length?{photos:lp}:{}),kitId:map[kitId]})}}
-    ta.value="";toast("復元しました");
-  }
-});
 function syncSettings(){
   document.querySelectorAll("[data-s]").forEach(e=>{const v=S[e.dataset.s];if(e.type==="checkbox")e.checked=!!v;else e.value=String(v)});
 }
@@ -628,34 +609,100 @@ async function restorePhotos(list,blobs){const out=[];
   return out}
 async function wipeAll(){for(const k of [...kits])await db.collection("kits").doc(k.id).delete();for(const l of [...logs])await db.collection("logs").doc(l.id).delete();
   await tx("blobs","readwrite",s=>s.clear());for(const id of Object.keys(URLS)){URL.revokeObjectURL(URLS[id]);delete URLS[id]}}
-document.addEventListener("click",async e=>{
-  const t=e.target.closest("#bkCopy,#bkRestore");if(!t)return;
-  const ta=$("#bkText");
-  if(t.id==="bkCopy"){
-    const withP=$("#bkPhotos").checked;
-    const out={app:"runnerlog",v:2,kits:kits.map(k=>withP?k:(({photos,...r})=>r)(k)),logs:withP?logs:logs.map(({photos,...l})=>l)};
-    if(withP){toast("写真をまとめています…");out.blobs={};for(const id of [...kits.flatMap(k=>k.photos||[]),...logs.flatMap(l=>l.photos||[])]){const b=await tx("blobs","readonly",s=>s.get(id));if(b)out.blobs[id]=await blobToData(b)}}
-    const data=JSON.stringify(out);ta.value=data;
-    const mb=(data.length/1048576).toFixed(1);
-    try{await navigator.clipboard.writeText(data);toast(`記録をコピーしました（${mb}MB）`)}catch(err){ta.focus();ta.select();toast(`枠の中の文字（${mb}MB）を全部コピーしてください`)}
-    LS.set("runnerlog-backup",String(Date.now()));bkCheck();
-  }else{
-    let d;try{d=JSON.parse(ta.value)}catch(err){return toast("記録の形式が正しくありません")}
-    if(!d||d.app!=="runnerlog"||!Array.isArray(d.kits))return toast("ランナーログの記録ではありません");
-    const mode=$("#bkMode").value,np=Object.keys(d.blobs||{}).length;
-    if(t.dataset.sure!=="1"){t.dataset.sure="1";t.textContent=`${d.kits.length}件${np?`・写真${np}枚`:""}を${mode==="replace"?"置き換えで":"追加で"}復元。もう一度押すと実行`;return}
-    t.dataset.sure="";t.textContent="貼り付けた記録を復元";
-    try{
-      if(mode==="replace")await wipeAll();
-      const map={};
-      for(const {id,photos,...k} of d.kits){
-        const np2=[];
-        for(const pid of photos||[]){const u=(d.blobs||{})[pid];if(!u)continue;const nid="p"+Date.now().toString(36)+Math.random().toString(36).slice(2,6);const b=dataToBlob(u);await tx("blobs","readwrite",s=>s.put(b,nid));URLS[nid]=URL.createObjectURL(b);np2.push(nid)}
-        const r=await db.collection("kits").add({...k,photos:np2});map[id]=r.id}
-      for(const {id,kitId,photos,...l} of (d.logs||[])){if(map[kitId]){const lp=await restorePhotos(photos,d.blobs);await db.collection("logs").add({...l,...(lp.length?{photos:lp}:{}),kitId:map[kitId]})}}
-      ta.value="";toast("復元しました");usage();
-    }catch(err){toast("復元できませんでした。容量や記録の形式を確認してください（"+((err&&err.message)||err)+"）")}
+// 既知の項目を列挙して書き出さず、新しい項目もそのまま往復させる。
+async function exportBackup(withPhotos){
+  const withoutPhotos=({photos,...row})=>row;
+  const out={app:"runnerlog",v:2,kits:kits.map(k=>withPhotos?{...k}:withoutPhotos(k)),logs:logs.map(l=>withPhotos?{...l}:withoutPhotos(l))};
+  if(withPhotos){
+    out.blobs={};
+    for(const id of new Set([...kits,...logs].flatMap(row=>row.photos||[]))){
+      const blob=await tx("blobs","readonly",store=>store.get(id));
+      if(!blob)throw new Error("保存写真が見つかりません。写真なしで書き出すか、写真を確認してください");
+      out.blobs[id]=await blobToData(blob);
+    }
   }
+  return JSON.stringify(out);
+}
+function parseBackup(text){
+  const d=JSON.parse(text),obj=x=>x&&typeof x==="object"&&!Array.isArray(x);
+  if(!obj(d)||d.app!=="runnerlog"||![1,2].includes(d.v)||!Array.isArray(d.kits)||!(d.logs===undefined||Array.isArray(d.logs)))throw new Error("ランナーログの対応する記録ではありません");
+  d.logs=d.logs||[];
+  if(d.blobs!==undefined&&!obj(d.blobs))throw new Error("写真の形式が正しくありません");
+  const ids=new Set(),logIds=new Set();
+  const strings=["name","model","jan","grade","status","shop","bought","started","finished","memo","recipe","review","folder","next","theme","want","notWant","refs","date","type","step","ref","idea","kitId"];
+  for(const row of [...d.kits,...d.logs]){
+    if(!obj(row)||typeof row.id!=="string"||!row.id)throw new Error("記録のIDが正しくありません");
+    if(strings.some(k=>row[k]!==undefined&&typeof row[k]!=="string"))throw new Error("記録の文字項目が正しくありません");
+    if(["minutes","price","created"].some(k=>row[k]!==undefined&&(typeof row[k]!=="number"||!Number.isFinite(row[k])||row[k]<0)))throw new Error("記録の数値が正しくありません");
+    if(row.photos!==undefined&&(!Array.isArray(row.photos)||row.photos.some(id=>typeof id!=="string")))throw new Error("写真の参照が正しくありません");
+  }
+  for(const k of d.kits){if(ids.has(k.id)||!Object.hasOwn(ST,k.status))throw new Error("キットの重複IDまたは状態が正しくありません");ids.add(k.id)}
+  for(const l of d.logs){if(logIds.has(l.id)||!ids.has(l.kitId)||(l.type!==undefined&&!RT.some(([v])=>v===l.type))||(l.idea!==undefined&&!IDEA.some(([v])=>v===l.idea)))throw new Error("記録の重複ID・キット参照・種類が正しくありません");logIds.add(l.id)}
+  // 置き換えの削除より前に、含まれている写真をすべてデコードして検証する。
+  for(const u of Object.values(d.blobs||{})){
+    if(typeof u!=="string"||!/^data:image\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/]*={0,2}$/.test(u))throw new Error("写真のデータが正しくありません");
+    dataToBlob(u);
+  }
+  return d;
+}
+async function importBackup(d,mode){
+  const oldKits=[...kits],oldLogs=[...logs],createdKits=[],createdLogs=[],createdPhotos=[];
+  const photoMap=new Map(),kitMap=new Map();
+  const photos=async list=>{
+    const out=[];
+    for(const id of list||[]){
+      if(!Object.hasOwn(d.blobs||{},id))continue; // 写真を含まない旧バックアップにも対応。
+      if(!photoMap.has(id)){
+        const restored=await restorePhotos([id],d.blobs);photoMap.set(id,restored[0]);createdPhotos.push(...restored);
+      }
+      out.push(photoMap.get(id));
+    }
+    return out;
+  };
+  try{
+    // 追加が完了するまでは既存データに触らない（容量不足時も元の記録を守る）。
+    for(const {id,photos:refs,...k} of d.kits){const r=await db.collection("kits").add({...k,photos:await photos(refs)});kitMap.set(id,r.id);createdKits.push(r.id)}
+    for(const {id,kitId,photos:refs,...l} of d.logs){const r=await db.collection("logs").add({...l,kitId:kitMap.get(kitId),photos:await photos(refs)});createdLogs.push(r.id)}
+  }catch(e){
+    for(const id of createdLogs)await db.collection("logs").doc(id).delete();
+    for(const id of createdKits)await db.collection("kits").doc(id).delete();
+    for(const id of createdPhotos)await assets.delete(id);
+    throw e;
+  }
+  if(mode==="replace"){
+    closeNote();
+    for(const l of oldLogs)await db.collection("logs").doc(l.id).delete();
+    for(const k of oldKits){await db.collection("kits").doc(k.id).delete();clearDraft(k.id)}
+    for(const id of new Set([...oldKits,...oldLogs].flatMap(r=>r.photos||[])))await assets.delete(id);
+  }
+}
+let backupBusy=false,backupConfirmation=null;
+function resetBackupConfirmation(){backupConfirmation=null;const b=$("#bkRestore");b.textContent="貼り付けた記録を復元"}
+$("#bkText").addEventListener("input",resetBackupConfirmation);
+$("#bkMode").addEventListener("change",resetBackupConfirmation);
+document.addEventListener("click",async e=>{
+  const t=e.target.closest("#bkCopy,#bkRestore");if(!t||backupBusy)return;
+  if(!db)return toast("読み込みが終わるまでお待ちください");
+  const ta=$("#bkText");
+  if(t.id==="bkRestore"){
+    let d;try{d=parseBackup(ta.value)}catch(err){resetBackupConfirmation();return toast("記録の形式を確認してください："+err.message)}
+    const mode=$("#bkMode").value,key=mode+"\n"+ta.value;
+    if(backupConfirmation!==key){backupConfirmation=key;t.textContent=`${d.kits.length}件を${mode==="replace"?"置き換えで":"追加で"}復元。もう一度押すと実行`;return}
+    resetBackupConfirmation();backupBusy=true;
+    try{await importBackup(d,mode);ta.value="";toast("復元しました");usage()}
+    catch(err){toast("復元できませんでした。容量や記録の形式を確認してください")}
+    finally{backupBusy=false}
+    return;
+  }
+  backupBusy=true;
+  try{
+    const data=await exportBackup($("#bkPhotos").checked);ta.value=data;resetBackupConfirmation();
+    const mb=(new Blob([data]).size/1048576).toFixed(1);
+    try{await navigator.clipboard.writeText(data);toast(`記録をコピーしました（${mb}MB）`)}
+    catch(err){ta.focus();ta.select();toast(`枠の中の文字（${mb}MB）を全部コピーしてください`)}
+    LS.set("runnerlog-backup",String(Date.now()));bkCheck();
+  }catch(err){toast("書き出せませんでした："+err.message)}
+  finally{backupBusy=false}
 });
 
 /* バーコード（JAN）読み取り：読めたら重複を確認し、新規ならキットを作ってJANで検索を開く */
