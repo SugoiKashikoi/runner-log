@@ -32,6 +32,8 @@ with sync_playwright() as p:
         page.add_init_script(MOCK + extra)
         page.goto(url, wait_until='domcontentloaded')
         page.wait_for_function('db !== null')
+        page.locator('#addKit').click()
+        page.locator('summary').filter(has_text='型式・JAN・グレード・スケール').click()
         return page
     page = fresh('window.delayCamera=true;')
     page.locator('#scanKit').click()
@@ -75,7 +77,7 @@ with sync_playwright() as p:
     page.wait_for_function('detectReady !== null')
     page.evaluate("window.dispatchEvent(new Event('pagehide'))")
     page.evaluate("detectReady([{rawValue:'4901234567894'}])")
-    assert page.evaluate('calls.stops > 0 && activeScan === null && openId === null')
+    assert page.evaluate("calls.stops > 0 && activeScan === null && openId === '__new'")
     page.context.close()
     browser.close()
 server.shutdown()

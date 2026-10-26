@@ -19,7 +19,7 @@ with sync_playwright() as p:
     assert page.locator('#r_text').is_visible()
     for field in ['f_model','f_jan','f_gradeSel','f_want','f_recipe','f_review']:
         assert not page.locator('#'+field).is_visible(),field
-    summary=page.locator('summary').filter(has_text='型式・JAN・グレード')
+    summary=page.locator('summary').filter(has_text='型式・JAN・グレード・スケール')
     assert summary.bounding_box()['height']>=44
     summary.click()
     page.locator('#f_model').fill('CHANGED')

@@ -20,6 +20,8 @@ with sync_playwright() as p:
     page.wait_for_function('db !== null')
     candidates=page.evaluate("boxCandidates('HG 1/144\\nRX-78-2\\nガンダム\\nBANDAI')")
     assert candidates['model']=='RX-78-2' and candidates['grade']=='HG' and candidates['name']=='ガンダム',candidates
+    scale=page.evaluate("boxCandidates('1/35\\nTAMIYA\\nM4A3 SHERMAN')")
+    assert scale['grade']=='1/35' and scale['name']=='M4A3 SHERMAN',scale
     page.locator('#addKit').click()
     page.locator('#f_name').fill('変更しない名前')
     requests.clear()
@@ -55,6 +57,11 @@ with sync_playwright() as p:
     assert len(page.workers)==0
     assert page.locator('#f_name').input_value()=='変更しない名前'
     assert not [u for u in requests if urlparse(u).hostname not in ('127.0.0.1',None) and not u.startswith(('data:','blob:'))], requests
+    page.evaluate('closeNote()')
+    page.locator('#ocrAdd').click()
+    page.locator('#ocrClose').wait_for(state='visible')
+    assert page.evaluate("openId === '__new'")
+    page.locator('#ocrClose').click()
     browser.close()
 server.shutdown()
 print('PASS: real Japanese+English engine offline, synthetic label recognition, editable/selective candidates, invalid image and cancel preserve input, workers terminated')

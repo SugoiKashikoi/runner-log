@@ -15,7 +15,7 @@ with sync_playwright() as p:
     page.wait_for_function('db !== null')
     page.locator('#addKit').click()
     page.locator('#f_name').fill('保存アダプター確認')
-    page.locator('summary').filter(has_text='型式・JAN・グレード').click()
+    page.locator('summary').filter(has_text='型式・JAN・グレード・スケール').click()
     page.locator('#f_jan').fill('4901234567894')
     page.locator('#save').click()
     page.wait_for_function('kits.length === 1')

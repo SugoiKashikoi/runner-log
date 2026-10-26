@@ -149,7 +149,7 @@ summary.sum{min-height:44px;cursor:pointer;padding:10px 0;touch-action:manipulat
   <button class="chip" id="statsToggle" style="margin-bottom:8px"></button>
   <div class="stats" id="stats"></div>
   <div class="bar" id="filters"></div>
-  <div class="bar"><input id="q" type="search" placeholder="キット名・型式・グレード・ショップで探す" style="max-width:260px"><span class="spacer"></span><button class="btn ghost" id="scanKit">バーコードで追加</button><button class="btn" id="addKit">＋ キットを追加</button></div>
+  <div class="bar"><input id="q" type="search" placeholder="キット名・型式・グレード・ショップで探す" style="max-width:260px"><span class="spacer"></span><button class="btn" id="ocrAdd">箱の写真から追加</button><button class="btn ghost" id="addKit">手入力で追加</button></div>
   <div class="list" id="list"><div class="empty">読み込み中です。最初のキットは「＋ キットを追加」から登録できます。</div></div>
 </div>
 
@@ -260,7 +260,7 @@ function area(id,label,val,ph=""){return `<label>${label}<textarea id="${id}" pl
 const GRADES=["HG","RG","MG","PG","SD","EG","30MS","30MM","RE/100","HiRM"];
 function gradeField(cur){
   const list=[...new Set([...GRADES,...kits.map(k=>k.grade).filter(Boolean)])];
-  return `<label>グレード<select id="f_gradeSel">${list.map(g=>`<option value="${esc(g)}" ${g===cur?"selected":""}>${esc(g)}</option>`).join("")}<option value="__new">＋ 自由入力</option></select></label><label id="f_gradeBox" hidden>グレード（自由入力）<input id="f_grade" type="text" value=""></label>`;
+  return `<label>グレード・スケール<select id="f_gradeSel">${list.map(g=>`<option value="${esc(g)}" ${g===cur?"selected":""}>${esc(g)}</option>`).join("")}<option value="__new">＋ 自由入力</option></select></label><label id="f_gradeBox" hidden>グレード・スケール（自由入力）<input id="f_grade" type="text" value=""></label>`;
 }
 function stepField(){
   const list=[...new Set([...STEPS,...logs.map(l=>l.step).filter(Boolean)])];
@@ -415,10 +415,11 @@ document.addEventListener("click",async e=>{
     const d=getDraft(openId);if(d){d.f_status="stock";d.f_bought=d.f_bought||k.bought||today();setDraft(openId,d)}
     try{await db.collection("kits").doc(openId).update({status:"stock",bought:k.bought||today()});toast("積みに移しました。価格とショップを入れて保存してください")}catch(err){toast("変更できませんでした")}
   }
-  else if(t.id==="addKit"){
+  else if(t.id==="addKit"||t.id==="ocrAdd"){
     if(!db)return toast("保存できません。サインインを確認してください");
     const st=filter==="all"?S.newStatus:filter;
-    draft={name:"",model:"",grade:"HG",status:st,price:0,photos:[]};openNote("__new");setTimeout(()=>$("#f_name")&&$("#f_name").focus(),50);
+    draft={name:"",model:"",grade:"",status:st,price:0,photos:[]};openNote("__new");
+    setTimeout(()=>t.id==="ocrAdd"?openBoxOCR():$("#f_name")?.focus(),50);
   }
   else if(t.id==="del"){
     if(openId==="__new"){closeNote();return}
@@ -570,9 +571,10 @@ function renderNote(){
   <h1 style="margin-top:8px"><small>製作ノート</small>${esc(k.name||"新しいキット")}</h1>
   <div class="sec"><button class="btn ghost" id="boxOCR" type="button" style="margin-bottom:10px">箱の写真から入力（端末内）</button><div class="grid2">${field("f_name","キット名",k.name)}
     <label>状態<select id="f_status">${Object.entries(ST).map(([v,l])=>`<option value="${v}" ${k.status===v?"selected":""}>${l}</option>`).join("")}</select></label></div>
-    <details><summary class="sum">型式・JAN・グレード</summary><div class="grid2">
+    <details><summary class="sum">型式・JAN・グレード・スケール</summary><div class="grid2">
       ${field("f_model","型式（任意）",k.model||"","text","例：RX-78-2")}${field("f_jan","JANコード（バーコードの数字）",k.jan||"")}${gradeField(k.grade)}
       ${/^\d{8,14}$/.test(k.jan||"")?`<a class="btn ghost sm" style="display:grid;place-items:center;text-decoration:none;color:var(--ink)" href="https://www.google.com/search?q=${k.jan}" target="_blank" rel="noopener">JANで検索</a>`:""}
+      <button class="btn ghost sm" id="scanKit" type="button">JANバーコードを補助入力</button>
     </div></details></div>
   <div class="sec"><h3>現在の製作プラン</h3><p class="m" style="margin:0 0 10px;font-size:.82rem">どれも空のままでOKです。あとからいつでも書き足したり、変えたりできます。</p><div class="stack">
     ${field("f_theme","こんなふうに作りたい（任意・あとから変更できます）",k.theme||"")}
@@ -821,11 +823,12 @@ function loadBoxOCR(frame){
 function boxCandidates(raw){
   const text=raw.normalize("NFKC").replace(/[－‐–—]/g,"-").replace(/([A-Za-z]{1,5})\s*-\s*(\d)/g,"$1-$2").replace(/(\d[A-Za-z]?)\s*-\s*([A-Za-z0-9])/g,"$1-$2");
   const grade=(text.toUpperCase().match(/(?:^|[^A-Z0-9])(RE\/100|30MS|30MM|HIRM|HG|RG|MG|PG|SD|EG)(?=$|[^A-Z0-9])/)||[])[1]||"";
+  const scaleMatch=text.match(/(?:^|[^\d])1\s*[\/／]\s*(\d{2,3})(?=$|[^\d])/),scale=scaleMatch?"1/"+scaleMatch[1]:"";
   const model=(text.toUpperCase().match(/\b[A-Z]{1,5}-?\d{1,4}[A-Z]?(?:-[A-Z0-9]{1,6})?\b/)||[])[0]||"";
-  const lines=text.split(/\r?\n/).map(x=>x.trim()).filter(x=>x.length>1&&x.length<100&&!/BANDAI|対象年齢|MADE IN|HOBBY|注意|WARNING/i.test(x));
-  const clean=x=>x.replace(model,"").replace(new RegExp("\\b"+grade.replace("/","\\/")+"\\b","i"),"").replace(/1\s*\/\s*\d{2,3}/g,"").trim();
+  const lines=text.split(/\r?\n/).map(x=>x.trim()).filter(x=>x.length>1&&x.length<100&&!/BANDAI|TAMIYA|HASEGAWA|AOSHIMA|FUJIMI|REVELL|ITALERI|ACADEMY|AIRFIX|対象年齢|MADE IN|HOBBY|注意|WARNING/i.test(x));
+  const clean=x=>(x.trim().toUpperCase()===model?"":x).replace(new RegExp("\\b"+grade.replace("/","\\/")+"\\b","i"),"").replace(/1\s*[\/／]\s*\d{2,3}/g,"").trim();
   const names=lines.map(clean).filter(x=>/[ァ-ヶ一-龯a-z]{2}/i.test(x));
-  return {name:names.find(x=>/[ァ-ヶ一-龯]/.test(x))||names[0]||"",grade:grade==="HIRM"?"HiRM":grade,model,text};
+  return {name:names.find(x=>/[ァ-ヶ一-龯]/.test(x))||names[0]||"",grade:grade==="HIRM"?"HiRM":grade||scale,model,text};
 }
 async function ocrImage(file){
   if(!file||!file.type.startsWith("image/")||file.size>20*1024*1024)throw new Error("20MB以下の画像を選んでください");
@@ -847,7 +850,7 @@ function openBoxOCR(){
   document.body.appendChild(overlay);
   let closed=false,worker=null,frame=null,busy=false;
   const release=()=>{if(worker){worker.terminate();worker=null}if(frame){frame.remove();frame=null}};
-  const close=()=>{if(closed)return;closed=true;release();overlay.remove();ocrSession=null;window.removeEventListener("pagehide",close);$("#boxOCR")?.focus()};
+  const close=()=>{if(closed)return;closed=true;release();overlay.remove();ocrSession=null;window.removeEventListener("pagehide",close);($("#boxOCR")||$("#ocrAdd"))?.focus()};
   ocrSession=close;window.addEventListener("pagehide",close);overlay.querySelector("#ocrClose").onclick=close;overlay.querySelector("#ocrClose").focus();
   const progress=message=>{if(!closed)overlay.querySelector("#ocrProgress").textContent=message};
   overlay.querySelector("#ocrFile").onchange=async e=>{
@@ -923,10 +926,10 @@ async function scanJan(){
     // UPC-A と先頭0付きEAN-13は同じ商品として扱う。
     const normalize=v=>String(v||"").padStart(13,"0");
     stop();const dup=kits.find(k=>normalize(k.jan)===normalize(code));
-    if(dup){toast("すでに登録済みのキットです");openNote(dup.id);return}
-    draft={name:"",model:"",jan:code,grade:"HG",status:S.newStatus,price:0,photos:[]};openNote("__new");
-    $("#f_name").placeholder="キット名を入力";
-    toast("JAN "+code+" を読み取りました。キット名を入力して保存してください");
+    if(dup&&dup.id!==openId){toast("すでに登録済みのキットです");openNote(dup.id);return}
+    const input=$("#f_jan");
+    if(input){input.value=code;input.dispatchEvent(new Event("input",{bubbles:true}));input.closest("details").open=true}
+    toast("JAN "+code+" を補助入力しました");
   };
   try{
     let det=null;
@@ -1029,8 +1032,8 @@ let storageStarting=false;
 async function startStorage(){
   if(storageStarting)return;storageStarting=true;
   const notice=$("#storageNotice");notice.hidden=false;notice.textContent="記録を読み込んでいます…";
-  $("#addKit").disabled=$("#scanKit").disabled=true;
-  try{await connectStorage(await createLocalStorageAdapter());notice.hidden=true;$("#addKit").disabled=$("#scanKit").disabled=false}
+  $("#addKit").disabled=$("#ocrAdd").disabled=true;
+  try{await connectStorage(await createLocalStorageAdapter());notice.hidden=true;$("#addKit").disabled=$("#ocrAdd").disabled=false}
   catch(e){db=null;assets=null;notice.innerHTML='<p>記録の保存先を開けませんでした。ブラウザの保存設定・空き容量を確認し、ほかのタブを閉じてから再試行してください。記録は変更していません。</p><button class="btn ghost" id="retryStorage">再試行</button>'}
   finally{storageStarting=false}
 }
