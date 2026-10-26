@@ -411,7 +411,7 @@ function renderNote(){
   $("#noteBody").innerHTML=`
   <div class="bar"><button class="btn ghost sm" id="back">← 一覧へ</button><span class="spacer"></span>${k.status==="wish"?`<button class="btn sm" id="bought">購入した → 積みへ</button>`:""}<span class="pill s-${k.status}">${ST[k.status]}</span></div>
   <h1 style="margin-top:8px"><small>製作ノート</small>${esc(k.name||"新しいキット")}</h1>
-  <div class="sec"><div class="grid2">${field("f_name","キット名",k.name)}${field("f_model","型式（任意）",k.model||"","text","例：RX-78-2")}${field("f_jan","JANコード（バーコードの数字）",k.jan||"")}${/^\d{8,14}$/.test(k.jan||"")?`<label>&nbsp;<a class="btn ghost sm" style="display:grid;place-items:center;text-decoration:none;color:var(--ink)" href="https://www.google.com/search?q=${k.jan}" target="_blank" rel="noopener">JANで検索</a></label>`:""}${gradeField(k.grade)}
+  <div class="sec"><button class="btn ghost" id="boxOCR" type="button" style="margin-bottom:10px">箱の写真から入力（端末内）</button><div class="grid2">${field("f_name","キット名",k.name)}${field("f_model","型式（任意）",k.model||"","text","例：RX-78-2")}${field("f_jan","JANコード（バーコードの数字）",k.jan||"")}${/^\d{8,14}$/.test(k.jan||"")?`<label>&nbsp;<a class="btn ghost sm" style="display:grid;place-items:center;text-decoration:none;color:var(--ink)" href="https://www.google.com/search?q=${k.jan}" target="_blank" rel="noopener">JANで検索</a></label>`:""}${gradeField(k.grade)}
     <label>状態<select id="f_status">${Object.entries(ST).map(([v,l])=>`<option value="${v}" ${k.status===v?"selected":""}>${l}</option>`).join("")}</select></label></div></div>
   <div class="sec"><h3>現在の製作プラン</h3><p class="m" style="margin:0 0 10px;font-size:.82rem">どれも空のままでOKです。あとからいつでも書き足したり、変えたりできます。</p><div class="stack">
     ${field("f_theme","こんなふうに作りたい（任意・あとから変更できます）",k.theme||"")}
@@ -657,6 +657,80 @@ document.addEventListener("click",async e=>{
     }catch(err){toast("復元できませんでした。容量や記録の形式を確認してください（"+((err&&err.message)||err)+"）")}
   }
 });
+
+/* 箱OCR：コード・認識データ・画像処理はすべて同じ配信元と端末内だけで完結。 */
+let ocrSession=null;
+function loadBoxOCR(frame){
+  return new Promise((resolve,reject)=>{
+    const script=frame.contentDocument.createElement("script");script.src=new URL("vendor/ocr/tesseract.min.js",location.href).href;
+    script.onload=resolve;script.onerror=()=>reject(new Error("OCRを読み込めませんでした"));frame.contentDocument.head.appendChild(script);
+  });
+}
+function boxCandidates(raw){
+  const text=raw.normalize("NFKC").replace(/[－‐–—]/g,"-").replace(/([A-Za-z]{1,5})\s*-\s*(\d)/g,"$1-$2").replace(/(\d[A-Za-z]?)\s*-\s*([A-Za-z0-9])/g,"$1-$2");
+  const grade=(text.toUpperCase().match(/(?:^|[^A-Z0-9])(RE\/100|30MS|30MM|HIRM|HG|RG|MG|PG|SD|EG)(?=$|[^A-Z0-9])/)||[])[1]||"";
+  const model=(text.toUpperCase().match(/\b[A-Z]{1,5}-?\d{1,4}[A-Z]?(?:-[A-Z0-9]{1,6})?\b/)||[])[0]||"";
+  const lines=text.split(/\r?\n/).map(x=>x.trim()).filter(x=>x.length>1&&x.length<100&&!/BANDAI|対象年齢|MADE IN|HOBBY|注意|WARNING/i.test(x));
+  const clean=x=>x.replace(model,"").replace(new RegExp("\\b"+grade.replace("/","\\/")+"\\b","i"),"").replace(/1\s*\/\s*\d{2,3}/g,"").trim();
+  const names=lines.map(clean).filter(x=>/[ァ-ヶ一-龯a-z]{2}/i.test(x));
+  return {name:names.find(x=>/[ァ-ヶ一-龯]/.test(x))||names[0]||"",grade:grade==="HIRM"?"HiRM":grade,model,text};
+}
+async function ocrImage(file){
+  if(!file||!file.type.startsWith("image/")||file.size>20*1024*1024)throw new Error("20MB以下の画像を選んでください");
+  const url=URL.createObjectURL(file),image=new Image();
+  try{
+    image.src=url;await image.decode();
+    if(image.naturalWidth*image.naturalHeight>40e6)throw new Error("画像が大きすぎます。少し小さくして試してください");
+    const scale=Math.min(1,1800/Math.max(image.naturalWidth,image.naturalHeight)),canvas=document.createElement("canvas");
+    canvas.width=Math.max(1,Math.round(image.naturalWidth*scale));canvas.height=Math.max(1,Math.round(image.naturalHeight*scale));
+    const ctx=canvas.getContext("2d");ctx.fillStyle="#fff";ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(image,0,0,canvas.width,canvas.height);
+    return canvas;
+  }finally{URL.revokeObjectURL(url)}
+}
+function openBoxOCR(){
+  if(ocrSession||!openId)return;
+  const noteId=openId,overlay=document.createElement("div");
+  overlay.className="note";overlay.style.zIndex="40";overlay.setAttribute("role","dialog");overlay.setAttribute("aria-modal","true");overlay.setAttribute("aria-label","箱の写真から入力");
+  overlay.innerHTML=`<div class="wrap"><button class="btn ghost" id="ocrClose">閉じる・中止</button><h2>箱の写真から入力</h2><p>写真は端末内で読み取ります。外部には送信しません。箱の正面を明るく、大きく写すと読み取りやすくなります。結果は候補なので、確認・編集してから反映してください。</p><label class="btn" style="display:inline-block;color:#fff">写真を選ぶ・撮る<input id="ocrFile" type="file" accept="image/*" capture="environment" hidden></label><p id="ocrProgress" role="status"></p><div id="ocrResult" hidden><p>反映したい項目だけチェックしてください。既存の入力がある項目は選択されていません。</p>${[["name","キット名"],["grade","グレード"],["model","型式"]].map(([key,label])=>`<div class="sec"><label class="ck"><input type="checkbox" id="ocrUse_${key}"> ${label}を反映</label><label>候補（編集できます）<input id="ocr_${key}" type="text"></label></div>`).join("")}<details class="sec"><summary>読み取った文字を確認</summary><textarea id="ocrRaw" readonly style="min-height:160px"></textarea></details><button class="btn" id="ocrApply" style="margin-top:12px">選んだ候補を反映</button></div></div>`;
+  document.body.appendChild(overlay);
+  let closed=false,worker=null,frame=null,busy=false;
+  const release=()=>{if(worker){worker.terminate();worker=null}if(frame){frame.remove();frame=null}};
+  const close=()=>{if(closed)return;closed=true;release();overlay.remove();ocrSession=null;window.removeEventListener("pagehide",close);$("#boxOCR")?.focus()};
+  ocrSession=close;window.addEventListener("pagehide",close);overlay.querySelector("#ocrClose").onclick=close;overlay.querySelector("#ocrClose").focus();
+  const progress=message=>{if(!closed)overlay.querySelector("#ocrProgress").textContent=message};
+  overlay.querySelector("#ocrFile").onchange=async e=>{
+    if(busy||!e.target.files[0])return;busy=true;overlay.querySelector("#ocrResult").hidden=true;e.target.disabled=true;
+    let timeout=null;
+    try{
+      progress("読み取りを準備しています…");const image=await ocrImage(e.target.files[0]);if(closed)return;
+      // 独立したDocumentがWorkerを所有するため、初期化中の中止・失敗でも丸ごと終了できる。
+      frame=document.createElement("iframe");frame.hidden=true;frame.title="端末内OCR処理";overlay.appendChild(frame);
+      let fail;const failure=new Promise((_,reject)=>{fail=reject});
+      timeout=setTimeout(()=>fail(new Error("読み取りがタイムアウトしました")),60000);
+      await Promise.race([loadBoxOCR(frame),failure]);if(closed)return;
+      const base=new URL("vendor/ocr/",location.href).href;
+      worker=await Promise.race([frame.contentWindow.Tesseract.createWorker("jpn+eng",1,{workerPath:base+"worker.min.js",corePath:base,langPath:base+"lang",workerBlobURL:false,gzip:true,logger:m=>{if(m.status==="recognizing text")progress("文字を読み取っています… "+Math.round(m.progress*100)+"％")},errorHandler:e=>fail(new Error(String(e)))}),failure]);
+      if(closed){await worker.terminate();return}
+      const {data}=await Promise.race([worker.recognize(image.toDataURL("image/png")),failure]);if(closed)return;
+      const candidates=boxCandidates(data.text||"");
+      for(const key of ["name","grade","model"]){overlay.querySelector("#ocr_"+key).value=candidates[key];overlay.querySelector("#ocrUse_"+key).checked=!!candidates[key]&&!v(key==="grade"?"f_gradeSel":"f_"+key)}
+      overlay.querySelector("#ocrRaw").value=candidates.text;
+      overlay.querySelector("#ocrResult").hidden=false;progress(candidates.text.trim()?"読み取りが終わりました。候補を確認してください":"文字を読み取れませんでした。写真を変えるか手入力してください");
+    }catch(err){progress("読み取れませんでした。写真を変えるか手入力してください。入力済みの内容はそのままです")}
+    finally{clearTimeout(timeout);release();busy=false;if(!closed){e.target.disabled=false;e.target.value=""}}
+  };
+  overlay.querySelector("#ocrApply").onclick=()=>{
+    if(openId!==noteId){close();return toast("ノートが変わったため反映しませんでした")}
+    for(const key of ["name","grade","model"]){
+      const value=overlay.querySelector("#ocr_"+key).value.trim();if(!overlay.querySelector("#ocrUse_"+key).checked||!value)continue;
+      let input=$("#f_"+key);
+      if(key==="grade"){$("#f_gradeSel").value="__new";$("#f_gradeSel").dispatchEvent(new Event("change",{bubbles:true}));input=$("#f_grade")}
+      input.value=value;input.dispatchEvent(new Event("input",{bubbles:true}));const details=input.closest("details");if(details)details.open=true;
+    }
+    close();toast("候補を反映しました。確認してノートを保存してください");
+  };
+}
+document.addEventListener("click",e=>{if(e.target.closest("#boxOCR"))openBoxOCR()});
 
 /* バーコード（JAN）読み取り：読めたら重複を確認し、新規ならキットを作ってJANで検索を開く */
 async function scanJan(){
