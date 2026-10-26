@@ -142,6 +142,7 @@ summary.sum{min-height:44px;cursor:pointer;padding:10px 0;touch-action:manipulat
   <div class="sec" id="firstNote" hidden style="margin-bottom:12px"><h3>はじめに：記録の保存先</h3>
     <p class="m" style="margin:0 0 10px;font-size:.9rem;line-height:1.7">登録は不要です。記録と写真は、このブラウザの中だけに保存されます。別の端末には同期されず、他の人にも見えません。ブラウザのデータを消したり機種変更をしたりすると消えるので、ときどき設定の「記録をコピー」で残してください。</p>
     <button class="btn sm" id="seenBtn">わかった</button></div>
+  <div class="sec" id="storageNotice" role="status">記録を読み込んでいます…</div>
   <button class="chip" id="statsToggle" style="margin-bottom:8px"></button>
   <div class="stats" id="stats"></div>
   <div class="bar" id="filters"></div>
@@ -231,7 +232,7 @@ function renderList(){
 }
 function render(){renderStats();renderFilters();renderList();if(openId&&openId!=="__new")renderNote()}
 
-function field(id,label,val,type="text",ph=""){return `<label>${label}<input id="${id}" type="${type}"${type==="number"?' inputmode="numeric"':""}${ph?` placeholder="${esc(ph)}"`:""} value="${esc(val)}"></label>`}
+function field(id,label,val,type="text",ph=""){return `<label>${label}<input id="${id}" type="${type}"${type==="number"?' inputmode="decimal" min="0" step="any"':""}${ph?` placeholder="${esc(ph)}"`:""} value="${esc(val)}"></label>`}
 function area(id,label,val,ph=""){return `<label>${label}<textarea id="${id}" placeholder="${esc(ph)}">${esc(val)}</textarea></label>`}
 const GRADES=["HG","RG","MG","PG","SD","EG","30MS","30MM","RE/100","HiRM"];
 function gradeField(cur){
@@ -305,21 +306,66 @@ const v=id=>{const e=document.getElementById(id);return e?e.value.trim():""};
 let draft=null;
 function readForm(){return {name:v("f_name"),model:v("f_model"),jan:v("f_jan"),grade:v("f_gradeSel")==="__new"?v("f_grade"):v("f_gradeSel"),status:v("f_status"),price:Number(v("f_price"))||0,shop:v("f_shop"),bought:v("f_bought"),started:v("f_started"),finished:v("f_finished"),memo:v("f_memo"),recipe:v("f_recipe"),review:v("f_review"),folder:v("f_folder"),next:v("f_next"),theme:v("f_theme"),want:v("f_want"),notWant:v("f_notwant"),refs:v("f_refs")}}
 // 新規キットは、保存・記録・写真を最初に操作したときに初めてDBへ作る（空の仮登録を残さない）
+let creatingKit=null,kitSaving=false,recordSaving=false;
 async function ensureDoc(){
+  if(creatingKit)return creatingKit;
   if(openId!=="__new")return openId;
   const d={...readForm(),photos:[],created:Date.now()};if(!d.name)d.name="名称未設定";
-  const r=await db.collection("kits").add(d);
-  if(!kits.find(x=>x.id===r.id))kits.push({id:r.id,...d});
-  draft=null;openId=r.id;return r.id;
+  if(!Number.isFinite(d.price)||d.price<0)throw new Error("価格は0以上の数値にしてください");
+  creatingKit=(async()=>{
+    const r=await db.collection("kits").add(d);
+    if(!kits.find(x=>x.id===r.id))kits.push({id:r.id,...d});
+    if(openId==="__new"){draft=null;openId=r.id}
+    return r.id;
+  })();
+  try{return await creatingKit}finally{creatingKit=null}
 }
 async function saveKit(){
-  if(!db)return toast("保存できません。サインインを確認してください");
-  const d=readForm();
+  if(!db)return toast("記録の読み込みが終わってから保存してください");
+  if(kitSaving)return;
+  const d=readForm(),id=openId,oldDraft=JSON.stringify(getDraft(id));
+  if(!Number.isFinite(d.price)||d.price<0)return toast("価格は0以上の数値にしてください");
+  if(id==="__new"&&!d.name)return toast("キット名を入れてください");
+  kitSaving=true;
   try{
-    if(openId==="__new"){if(!d.name)return toast("キット名を入れてください");await ensureDoc();render();toast("保存しました");return}
+    if(id==="__new"){await ensureDoc();render();toast("保存しました");return}
     if(!d.name)d.name="名称未設定";
-    const id=openId;await db.collection("kits").doc(id).update(d);clearDraft(id);const dd=$("#dirty");if(dd)dd.hidden=true;toast("保存しました")
-  }catch(e){toast("保存できませんでした。容量不足の可能性があります。入力は残っているので、設定でバックアップを取り、不要な写真を消してください")}
+    await db.collection("kits").doc(id).update(d);
+    if(JSON.stringify(getDraft(id))===oldDraft)clearDraft(id);
+    if(openId===id&&$("#dirty"))$("#dirty").hidden=!getDraft(id);
+    toast("保存しました");
+  }catch(e){toast("保存できませんでした。入力は残っています。保存容量とブラウザの設定を確認してください")}
+  finally{kitSaving=false}
+}
+const recordKey=r=>JSON.stringify({...r,files:r.files.map(f=>[f.name,f.size,f.lastModified])});
+async function saveRecord(){
+  if(recordSaving)return;
+  if(!db||!openId)return toast("記録の読み込みが終わってから保存してください");
+  const rec={...REC,files:[...REC.files]},key=recordKey(rec),text=rec.text.trim();
+  if(!text&&!rec.files.length)return toast("内容か写真を入れてください");
+  const minutes=rec.min===""?0:Number(rec.min);
+  if(rec.type==="work"&&(!Number.isFinite(minutes)||minutes<0))return toast("作業時間は0以上の数値にしてください");
+  recordSaving=true;const button=$("#addRec");if(button){button.disabled=true;button.textContent="保存中…"}
+  let id=openId,saved=false;const photos=[];
+  try{
+    if(id==="__new")id=await ensureDoc();
+    const kit=kits.find(k=>k.id===id);if(!kit)throw new Error("キットが見つかりません");
+    if(rec.files.length&&!assets)throw new Error("写真を保存できません");
+    for(const file of rec.files)photos.push((await assets.upload(file)).id);
+    const row={kitId:id,type:rec.type,date:rec.date||today(),memo:text,created:Date.now()};
+    if(rec.type==="work"){row.step=rec.step||"その他";row.minutes=minutes}
+    if(photos.length)row.photos=photos;if(rec.ref.trim())row.ref=rec.ref.trim();
+    await db.collection("logs").add(row);saved=true;
+    if(row.type==="work")clearTimerMinutes(id,row.minutes);
+    if(openId===id&&recordKey(REC)===key)REC=newRec();
+    const update={};if(rec.next.trim())update.next=rec.next.trim();
+    if(rec.type==="work"&&kit.status==="stock"){update.status="building";update.started=kit.started||row.date}
+    if(Object.keys(update).length)await db.collection("kits").doc(id).update(update);
+    if(openId===id)renderNote();toast("記録しました");
+  }catch(e){
+    if(!saved){for(const photo of photos)try{await assets.delete(photo)}catch(ignore){}toast("保存できませんでした。入力は残っています。容量や保存設定を確認してください")}
+    else{if(openId===id)renderNote();toast("記録は保存しました。状態・次の作業は更新できなかったのでノートで確認してください")}
+  }finally{recordSaving=false;const b=$("#addRec");if(b){b.disabled=false;b.textContent="記録する"}}
 }
 document.addEventListener("click",async e=>{
   const t=e.target.closest("button,[data-id]");if(!t)return;
@@ -461,7 +507,7 @@ function recRow(l){
   return `<div class="rec"><div class="recH">
     <input type="date" class="rdate" data-ldate="${l.id}" value="${esc(l.date)}" aria-label="日付">
     <span class="step">${rtLabel(t)}</span>
-    ${t==="work"&&l.step?`<span class="m">${esc(l.step)}</span>`:""}${t==="work"&&l.minutes?`<span class="m num">${l.minutes}分</span>`:""}
+    ${t==="work"&&l.step?`<span class="m">${esc(l.step)}</span>`:""}${t==="work"&&l.minutes?`<span class="m num">${esc(l.minutes)}分</span>`:""}
     ${t==="memo"?`<select class="ideasel" data-lidea="${l.id}" aria-label="アイデアの判断">${IDEA.map(([v,n])=>`<option value="${v}" ${(l.idea||"")===v?"selected":""}>${n}</option>`).join("")}</select>`:""}
     <span class="spacer"></span><button class="btn ghost sm" data-rmrec="${l.id}" aria-label="記録を削除">×</button></div>
     ${l.memo?`<div class="recT">${esc(l.memo)}</div>`:""}${ph?`<div class="recPh">${ph}</div>`:""}${linkList(l.ref)}
@@ -502,7 +548,7 @@ function renderNote(){
       <div class="grid2">${field("r_date","日付",REC.date,"date")}</div>
       ${field("r_ref","参考リンク（任意）",REC.ref)}${field("r_next","次にやること（空欄なら変えません）",REC.next)}
       ${assets?`<div class="bar"><label class="btn ghost sm" style="display:inline-grid;place-items:center;color:var(--ink)">写真を選ぶ<input id="r_photo" type="file" accept="image/*" multiple hidden></label><span class="m">${REC.files.length?REC.files.length+"枚を選択中":""}</span></div>`:""}</div></details>
-    <div><button class="btn" id="addRec">記録する</button></div></div></div>
+    <div><button class="btn" id="addRec" ${recordSaving?"disabled":""}>${recordSaving?"保存中…":"記録する"}</button></div></div></div>
   <div class="sec"><h3>タイムライン <span class="num">${(mins/60).toFixed(1)}h / ${kl.length}件</span></h3>
     <div class="bar">${[["all","すべて"],["work","作業"],["idea","アイデア"]].map(([v,n])=>`<button class="chip" data-rf="${v}" aria-pressed="${recFilter===v}">${n}</button>`).join("")}</div>
     ${shown.map(recRow).join("")||"<span class='m'>まだ記録がありません。上の「＋記録」から、一言だけでも残せます。</span>"}</div>
@@ -572,30 +618,7 @@ document.addEventListener("click",async e=>{
   if(t.dataset.rmrec){
     const l=logs.find(x=>x.id===t.dataset.rmrec);if(!l)return;
     try{await db.collection("logs").doc(l.id).delete();const {id:_i,...rest}=l;undoToast("記録を削除しました",async()=>{await db.collection("logs").add(rest);toast("元に戻しました")})}catch(err){toast("削除できませんでした")}return}
-  if(t.id==="addRec"){
-    const text=REC.text.trim();
-    if(!text&&!REC.files.length)return toast("内容か写真を入れてください");
-    if(openId==="__new"){try{await ensureDoc()}catch(err){return toast("保存できませんでした")}}
-    const k=kits.find(x=>x.id===openId);if(!k)return;
-    const ids=[];
-    if(REC.files.length){
-      if(!assets)return toast("写真を保存できません");
-      toast("写真を保存中…");
-      try{for(const f of REC.files)ids.push((await assets.upload(f)).id)}catch(err){return toast("写真を保存できませんでした。入力は残っています")}
-    }
-    const o={kitId:openId,type:REC.type,date:REC.date||today(),memo:text,created:Date.now()};
-    if(REC.type==="work"){o.step=REC.step||"その他";o.minutes=Number(REC.min)||0}
-    if(ids.length)o.photos=ids;if(REC.ref.trim())o.ref=REC.ref.trim();
-    const nx=REC.next.trim();
-    try{
-      await db.collection("logs").add(o);
-      const up={};if(nx)up.next=nx;
-      if(REC.type==="work"&&k.status==="stock"){up.status="building";up.started=k.started||o.date}
-      if(Object.keys(up).length)await db.collection("kits").doc(openId).update(up);
-      if(o.type==="work")clearTimerMinutes(k.id,o.minutes);
-      REC=newRec();renderNote();toast("記録しました");
-    }catch(err){toast("保存できませんでした。入力は残っています")}
-  }
+  if(t.id==="addRec")await saveRecord();
 });
 
 render();
@@ -640,7 +663,7 @@ document.addEventListener("click",async e=>{
   }
   p.hidden=false;p.scrollTop=0;syncSettings();usage();bkCheck();
 });
-const blobToData=b=>new Promise(r=>{const f=new FileReader();f.onload=()=>r(f.result);f.readAsDataURL(b)});
+const blobToData=b=>new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(reader.error);reader.readAsDataURL(b)});
 function dataToBlob(u){const [h,b]=u.split(",");const m=/data:(.*?);base64/.exec(h)[1];const bin=atob(b);const a=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)a[i]=bin.charCodeAt(i);return new Blob([a],{type:m})}
 async function restorePhotos(list,blobs){const out=[];
   for(const pid of list||[]){const u=(blobs||{})[pid];if(!u)continue;const r=await assets.upload(dataToBlob(u),{original:true});out.push(r.id)}
@@ -896,20 +919,33 @@ document.addEventListener("click",e=>{if(e.target.closest("#seenBtn")){LS.set("r
  */
 async function createLocalStorageAdapter(){
 const IDB={db:null},URLS={};
-const idbOpen=()=>new Promise((res,rej)=>{const r=indexedDB.open("runnerlog",1);r.onupgradeneeded=()=>["kits","logs","blobs"].forEach(s=>r.result.createObjectStore(s));r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)});
-const tx=(s,m,f)=>IDB.db?new Promise((res,rej)=>{const t=IDB.db.transaction(s,m);const q=f(t.objectStore(s));t.oncomplete=()=>res(q&&q.result);t.onerror=()=>rej(t.error)}):Promise.resolve([]);
+const idbOpen=()=>new Promise((resolve,reject)=>{
+  const request=indexedDB.open("runnerlog",1);let settled=false;
+  request.onupgradeneeded=()=>["kits","logs","blobs"].forEach(name=>request.result.createObjectStore(name));
+  request.onsuccess=()=>{if(settled){request.result.close();return}settled=true;request.result.onversionchange=()=>request.result.close();resolve(request.result)};
+  request.onerror=()=>{settled=true;reject(request.error)};
+  request.onblocked=()=>{settled=true;reject(new Error("別のタブを閉じてから再読み込みしてください"))};
+});
+const tx=(store,mode,operation)=>new Promise((resolve,reject)=>{
+  if(!IDB.db){reject(new Error("保存先に接続できていません"));return}
+  const transaction=IDB.db.transaction(store,mode),request=operation(transaction.objectStore(store));
+  transaction.oncomplete=()=>resolve(request&&request.result);
+  transaction.onerror=transaction.onabort=()=>reject(transaction.error||new Error("保存処理が中断されました"));
+});
 function makeCol(name){
-  let rows=[];const ls=[];
-  const snap=()=>({docs:rows.map(r=>({id:r.id,data:()=>{const{id,...d}=r;return d}}))});
-  const emit=()=>ls.forEach(f=>f(snap()));
-  const save=r=>tx(name,"readwrite",s=>s.put(r,r.id));
-  return{
-    async load(){try{rows=(await tx(name,"readonly",s=>s.getAll()))||[]}catch(e){rows=[]}},
-    onSnapshot(f){ls.push(f);f(snap())},
-    async add(o){const id=name[0]+Date.now().toString(36)+Math.random().toString(36).slice(2,6);const r={...o,id};await save(r);rows.push(r);emit();return{id}},
-    doc(id){return{
-      async update(d){const r=rows.find(x=>x.id===id);if(!r)return;Object.assign(r,d);await save(r);emit()},
-      async delete(){await tx(name,"readwrite",s=>s.delete(id));rows=rows.filter(x=>x.id!==id);emit()}}}
+  let rows=[],queue=Promise.resolve();const listeners=[];
+  const snapshot=()=>({docs:rows.map(row=>({id:row.id,data:()=>{const{id,...data}=row;return data}}))});
+  const emit=()=>listeners.forEach(fn=>fn(snapshot()));
+  const write=operation=>{const next=queue.then(operation);queue=next.catch(()=>{});return next};
+  const save=row=>tx(name,"readwrite",store=>store.put(row,row.id));
+  return {
+    async load(){rows=(await tx(name,"readonly",store=>store.getAll()))||[]},
+    onSnapshot(fn){listeners.push(fn);fn(snapshot())},
+    add(data){return write(async()=>{const id=name[0]+Date.now().toString(36)+Math.random().toString(36).slice(2,6),row={...data,id};await save(row);rows.push(row);emit();return {id}})},
+    doc(id){return {
+      update(data){return write(async()=>{const old=rows.find(row=>row.id===id);if(!old)throw new Error("記録が見つかりません");const next={...old,...data};await save(next);rows=rows.map(row=>row.id===id?next:row);emit()})},
+      delete(){return write(async()=>{await tx(name,"readwrite",store=>store.delete(id));rows=rows.filter(row=>row.id!==id);emit()})}
+    }}
   };
 }
 async function shrink(file){
@@ -930,24 +966,33 @@ const photoStore={
 };
 async function loadBlobs(){
   if(!IDB.db)return;
-  await new Promise(res=>{const t=IDB.db.transaction("blobs","readonly");const s=t.objectStore("blobs");const q=s.openCursor();
-    q.onsuccess=()=>{const c=q.result;if(c){URLS[c.key]=URL.createObjectURL(c.value);c.continue()}};t.oncomplete=res;t.onerror=res});
+  await new Promise((res,rej)=>{const t=IDB.db.transaction("blobs","readonly");const s=t.objectStore("blobs");const q=s.openCursor();
+    q.onsuccess=()=>{const c=q.result;if(c){URLS[c.key]=URL.createObjectURL(c.value);c.continue()}};t.oncomplete=res;t.onerror=t.onabort=()=>rej(t.error)});
 }
-  try{IDB.db=await idbOpen()}catch(e){toast("この状態では保存できません。プライベートモードを解除してください")}
-  const cols={kits:makeCol("kits"),logs:makeCol("logs")};
-  await Promise.all([cols.kits.load(),cols.logs.load()]);
-  await loadBlobs();
-  return {db:{collection:n=>cols[n]},assets:photoStore};
+  try{
+    IDB.db=await idbOpen();
+    const cols={kits:makeCol("kits"),logs:makeCol("logs")};
+    await Promise.all([cols.kits.load(),cols.logs.load()]);await loadBlobs();
+    return {db:{collection:n=>cols[n]},assets:photoStore};
+  }catch(e){if(IDB.db)IDB.db.close();for(const url of Object.values(URLS))URL.revokeObjectURL(url);throw e}
 }
 async function connectStorage(adapter){
   db=adapter.db;assets=adapter.assets;
   db.collection("kits").onSnapshot(s=>{kits=s.docs.map(d=>({id:d.id,...d.data()}));pruneWorkTimers();render();bkCheck();usage()});
   db.collection("logs").onSnapshot(s=>{logs=s.docs.map(d=>({id:d.id,...d.data()}));render()});
 }
-(async()=>{
-  if(!LS.get("runnerlog-seen"))$("#firstNote").hidden=false;
-  await connectStorage(await createLocalStorageAdapter());
-})();
+let storageStarting=false;
+async function startStorage(){
+  if(storageStarting)return;storageStarting=true;
+  const notice=$("#storageNotice");notice.hidden=false;notice.textContent="記録を読み込んでいます…";
+  $("#addKit").disabled=$("#scanKit").disabled=true;
+  try{await connectStorage(await createLocalStorageAdapter());notice.hidden=true;$("#addKit").disabled=$("#scanKit").disabled=false}
+  catch(e){db=null;assets=null;notice.innerHTML='<p>記録の保存先を開けませんでした。ブラウザの保存設定・空き容量を確認し、ほかのタブを閉じてから再試行してください。記録は変更していません。</p><button class="btn ghost" id="retryStorage">再試行</button>'}
+  finally{storageStarting=false}
+}
+document.addEventListener("click",e=>{if(e.target.closest("#retryStorage"))startStorage()});
+if(!LS.get("runnerlog-seen"))$("#firstNote").hidden=false;
+startStorage();
 </script>
 
 </body></html>
