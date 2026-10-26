@@ -1,0 +1,653 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>ランナーログ配布版</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;700;900&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* 組立説明書のような罫線と工程番号。キット一覧 → ビルダーズノート（詳細）の2層 */
+:root{
+  --bg:#eef1f4; --paper:#ffffff; --ink:#1b2430; --sub:#5d6b7b; --line:#cdd5de;
+  --accent:#d6402b; --blue:#2b5fa8; --wish:#8a5bc4; --stock:#c47a12; --build:#2b5fa8; --done:#2e8a57;
+  --f-display:"Zen Kaku Gothic New","Hiragino Sans","Yu Gothic",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#12161c; --paper:#1b2129; --ink:#e6ebf1; --sub:#9aa7b6; --line:#2e3742;
+  --accent:#ff6a52; --blue:#7aa7ec; --wish:#b892ea; --stock:#e9a43c; --build:#7aa7ec; --done:#5cc58a; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#12161c; --paper:#1b2129; --ink:#e6ebf1; --sub:#9aa7b6; --line:#2e3742;
+  --accent:#ff6a52; --blue:#7aa7ec; --wish:#b892ea; --stock:#e9a43c; --build:#7aa7ec; --done:#5cc58a; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-display);line-height:1.6}
+.wrap{max-width:960px;margin:0 auto;padding-block:20px 60px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+h1{font-weight:900;font-size:1.6rem;margin:0;letter-spacing:.02em;text-wrap:balance}
+h1 small{display:block;font-size:.72rem;font-weight:700;color:var(--sub);letter-spacing:.12em}
+.num{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);margin:16px 0}
+.stat{background:var(--paper);padding:10px 12px}
+.stat b{display:block;font-size:1.3rem}
+.stat span{font-size:.72rem;color:var(--sub);letter-spacing:.06em}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
+.chip{border:1px solid var(--line);background:var(--paper);color:var(--ink);padding:6px 12px;border-radius:999px;font:inherit;font-size:.85rem;cursor:pointer}
+.chip[aria-pressed="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.btn{border:0;background:var(--accent);color:#fff;padding:8px 14px;border-radius:6px;font:inherit;font-weight:700;cursor:pointer}
+.btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+.btn.sm{padding:4px 10px;font-size:.8rem}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.spacer{flex:1}
+.list{display:grid;gap:8px}
+.kit{display:grid;grid-template-columns:56px 1fr auto;gap:12px;align-items:center;background:var(--paper);border:1px solid var(--line);padding:10px 12px;cursor:pointer;text-align:left;font:inherit;color:inherit;width:100%;border-radius:4px}
+.kit:hover{border-color:var(--sub)}
+.thumb{width:56px;height:56px;background:var(--bg);border:1px dashed var(--line);display:grid;place-items:center;font-size:.7rem;color:var(--sub);object-fit:cover;border-radius:3px}
+.kit .t{font-weight:700;min-width:0;overflow-wrap:anywhere}
+.kit .m{font-size:.78rem;color:var(--sub)}
+.pill{font-size:.72rem;font-weight:700;padding:2px 8px;border-radius:3px;border:1.5px solid currentColor;white-space:nowrap}
+.s-wish{color:var(--wish)}.s-stock{color:var(--stock)}.s-building{color:var(--build)}.s-done{color:var(--done)}
+.empty{background:var(--paper);border:1px dashed var(--line);padding:24px;text-align:center;color:var(--sub)}
+.note{position:fixed;inset:0;background:var(--bg);overflow-y:auto;z-index:20;padding-top:env(safe-area-inset-top,0px)}
+.sec{background:var(--paper);border:1px solid var(--line);padding:14px 16px;margin-top:12px}
+.sec h3{margin:0 0 8px;font-size:.8rem;letter-spacing:.12em;color:var(--sub)}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
+label{display:grid;gap:2px;font-size:.75rem;color:var(--sub);min-width:0}
+input,select,textarea{font:inherit;font-size:.95rem;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:6px 8px;width:100%}
+textarea{min-height:72px;resize:vertical}
+.photos{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px}
+.photos figure{margin:0;position:relative}
+.photos img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:3px;display:block}
+.photos button{position:absolute;top:4px;right:4px}
+.log{display:grid;grid-template-columns:auto 1fr auto;gap:4px 12px;padding:8px 0;border-top:1px solid var(--line);font-size:.9rem}
+.log:first-child{border-top:0}
+.step{display:inline-block;background:var(--ink);color:var(--paper);font-size:.72rem;padding:0 6px;border-radius:2px;margin-right:6px}
+.ck{grid-template-columns:auto 1fr;align-items:center;gap:10px;font-size:.95rem;color:var(--ink)}.ck input{width:22px;min-height:22px}
+.toast{position:fixed;left:50%;bottom:calc(16px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--paper);padding:8px 16px;border-radius:6px;font-size:.85rem;z-index:30}
+@media (prefers-reduced-motion:no-preference){.kit{transition:border-color .15s}}
+
+/* スマホ対応：メール日報と同じiOS風（丸角カード、システムフォント、横スクロールのフィルター、大きいタップ領域） */
+:root{
+  --bg:#f2f2f7; --paper:#ffffff; --ink:#1c1c1e; --sub:#8a8a8e; --line:rgba(60,60,67,.18); --accent:#007aff;
+  --f-display:-apple-system,BlinkMacSystemFont,"SF Pro Text","Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic UI",sans-serif;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#000; --paper:#1c1c1e; --ink:#f2f2f7; --sub:#98989f; --line:rgba(84,84,88,.55); --accent:#0a84ff}}
+:root[data-theme="dark"]{--bg:#000; --paper:#1c1c1e; --ink:#f2f2f7; --sub:#98989f; --line:rgba(84,84,88,.55); --accent:#0a84ff}
+body{-webkit-font-smoothing:antialiased}
+h1{font-size:2rem;letter-spacing:-.01em}
+.stats{border:0;border-radius:14px;overflow:hidden}
+.kit,.sec{border:0;border-radius:14px}
+.kit{padding:12px 14px;min-height:64px}
+.thumb{border-radius:10px;border:0;background:var(--line)}
+.btn{border-radius:99px;min-height:40px;padding:8px 18px}
+.btn.ghost{background:var(--paper);border:0;color:var(--accent)}
+.chip{border:0;background:var(--paper);min-height:36px;white-space:nowrap}
+.chip[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
+#filters{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;position:sticky;top:env(safe-area-inset-top,0px);z-index:5;margin-inline:-16px;padding:8px 16px;background:color-mix(in srgb,var(--bg) 80%,transparent);-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px)}
+#filters::-webkit-scrollbar{display:none}
+input,select,textarea{border:0;border-radius:10px;background:var(--bg);padding:10px 12px;min-height:40px}
+.note{padding-bottom:env(safe-area-inset-bottom,0px)}
+.note .wrap{padding-bottom:calc(60px + env(safe-area-inset-bottom,0px))}
+.photos img{border-radius:10px}
+/* 現行iOS風：大きい角丸、半透明ガラスのカード、やわらかい影、薄いグラデーションの背景 */
+:root{--glass:rgba(255,255,255,.62);--edge:rgba(255,255,255,.7);--shadow:0 6px 24px rgba(30,40,80,.08);--accent:#4a5cf0;
+  --ground:linear-gradient(160deg,#e9eefc 0%,#f6f1ee 55%,#e8f1f4 100%)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--glass:rgba(44,48,60,.55);--edge:rgba(255,255,255,.08);--shadow:0 6px 24px rgba(0,0,0,.35);--accent:#8c9bff;
+  --ground:linear-gradient(160deg,#0b0d14 0%,#141722 55%,#0d1519 100%)}}
+:root[data-theme="dark"]{--glass:rgba(44,48,60,.55);--edge:rgba(255,255,255,.08);--shadow:0 6px 24px rgba(0,0,0,.35);--accent:#8c9bff;
+  --ground:linear-gradient(160deg,#0b0d14 0%,#141722 55%,#0d1519 100%)}
+body{background:var(--bg) var(--ground) fixed;min-height:100vh}
+.stats{background:transparent;gap:10px;border-radius:0;overflow:visible}
+.stat{border-radius:20px;padding:12px 14px}
+.kit,.sec,.stat,.empty{background:var(--glass);-webkit-backdrop-filter:blur(24px) saturate(160%);backdrop-filter:blur(24px) saturate(160%);border:1px solid var(--edge);box-shadow:var(--shadow);border-radius:24px}
+.kit{padding:14px 16px}
+.sec{padding:18px 20px}
+.thumb{border-radius:16px;background:var(--bg)}
+.photos img{border-radius:16px}
+.chip{background:var(--glass);border:1px solid var(--edge);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);padding:8px 16px;font-weight:600}
+.chip[aria-pressed="true"]{background:var(--accent);color:#fff;border-color:transparent}
+.btn{background:var(--accent);box-shadow:0 4px 14px color-mix(in srgb,var(--accent) 35%,transparent)}
+.btn.ghost{background:var(--glass);border:1px solid var(--edge);box-shadow:none;color:var(--ink)}
+input,select,textarea{background:color-mix(in srgb,var(--paper) 55%,transparent);border:1px solid var(--line);border-radius:14px}
+.pill{border:0;border-radius:99px;padding:3px 10px;background:color-mix(in srgb,currentColor 14%,transparent)}
+#filters{background:transparent;-webkit-backdrop-filter:none;backdrop-filter:none}
+@media (max-width:520px){
+  h1{font-size:1.75rem}
+  input,select,textarea{font-size:16px}
+  .kit{grid-template-columns:48px 1fr auto;gap:10px}
+  .thumb{width:48px;height:48px}
+  .grid2{grid-template-columns:1fr 1fr}
+  .log{grid-template-columns:1fr auto}
+  .log>span:first-child{grid-column:1/-1;color:var(--sub);font-size:.78rem}
+  .btn.sm{min-height:36px}
+  #addKit{flex:1}
+  #q{max-width:none!important;flex:1 1 100%}
+  #filters{margin-inline:-16px}
+}
+/* 評価を受けた改善：不透明寄りの入力欄、44pxのタップ領域、保存バー固定、フィルターの続きが見える表示 */
+input,select,textarea{background:var(--paper)}
+.btn,.chip,.btn.sm{min-height:44px}
+.savebar{position:sticky;bottom:calc(8px + env(safe-area-inset-bottom,0px));z-index:6;padding:8px;border-radius:99px;background:var(--glass);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);border:1px solid var(--edge);box-shadow:var(--shadow)}
+.dirty{font-size:.78rem;color:var(--accent);font-weight:700}
+#filters{-webkit-mask-image:linear-gradient(90deg,#000 85%,transparent);mask-image:linear-gradient(90deg,#000 85%,transparent)}
+.kit .m{opacity:.85}
+.sum{cursor:pointer;font-size:.8rem;letter-spacing:.12em;color:var(--sub);font-weight:700;min-height:28px}details.sec[open] .sum{margin-bottom:8px}
+.stack{display:grid;gap:10px}.rec{padding:10px 0;border-top:1px solid var(--line)}.recH{display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center}
+.recT{white-space:pre-wrap;overflow-wrap:anywhere;margin-top:6px}.recPh{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}.recPh img{width:84px;height:84px;object-fit:cover;border-radius:12px}
+.rdate,select.ideasel{width:auto;min-height:34px;padding:4px 8px;font-size:.85rem}details>summary{list-style-position:inside}
+:root{--glass:rgba(255,255,255,.88)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--glass:rgba(34,38,50,.9)}}
+:root[data-theme="dark"]{--glass:rgba(34,38,50,.9)}
+</style>
+
+<div class="wrap" id="main">
+  <div class="bar" style="flex-wrap:nowrap;align-items:flex-start"><h1><small>RUNNER LOG</small>ランナーログ</h1><span class="spacer"></span><button class="btn ghost sm" id="openSettings">設定</button></div>
+  <div class="bar"><button class="chip" id="bkBanner" hidden>バックアップをしましょう（設定へ）</button></div>
+  <div class="sec" id="firstNote" hidden style="margin-bottom:12px"><h3>はじめに：記録の保存先</h3>
+    <p class="m" style="margin:0 0 10px;font-size:.9rem;line-height:1.7">登録は不要です。記録と写真は、このブラウザの中だけに保存されます。別の端末には同期されず、他の人にも見えません。ブラウザのデータを消したり機種変更をしたりすると消えるので、ときどき設定の「記録をコピー」で残してください。</p>
+    <button class="btn sm" id="seenBtn">わかった</button></div>
+  <button class="chip" id="statsToggle" style="margin-bottom:8px"></button>
+  <div class="stats" id="stats"></div>
+  <div class="bar" id="filters"></div>
+  <div class="bar"><input id="q" type="search" placeholder="キット名・グレード・ショップで探す" style="max-width:260px"><span class="spacer"></span><button class="btn" id="addKit">＋ キットを追加</button></div>
+  <div class="list" id="list"><div class="empty">読み込み中です。最初のキットは「＋ キットを追加」から登録できます。</div></div>
+</div>
+
+<div class="note" id="note" hidden><div class="wrap" id="noteBody"></div></div>
+<div class="note" id="settings" hidden><div class="wrap">
+  <div class="bar"><button class="btn ghost sm" id="closeSettings">← 戻る</button></div>
+  <h1 style="margin-top:8px"><small>SETTINGS</small>設定</h1>
+  <div class="sec"><h3>表示</h3><div class="grid2">
+    <label>テーマ<select data-s="theme"><option value="auto">端末に合わせる</option><option value="light">ライト</option><option value="dark">ダーク</option></select></label>
+    <label>一覧の並び順<select data-s="sort"><option value="status">状態順（製作中が先頭）</option><option value="bought">購入日が新しい順</option><option value="name">名前順</option></select></label>
+  </div>
+  <div style="display:grid;gap:10px;margin-top:12px">
+    <label class="ck"><input type="checkbox" data-s="stockSum"> 上の集計に「積みの合計額」を出す</label>
+    <label class="ck"><input type="checkbox" data-s="hours"> 上の集計に「作業時間の合計」を出す</label>
+  </div></div>
+  <div class="sec"><h3>新しいキット</h3><div class="grid2">
+    <label>追加するときの初期状態<select data-s="newStatus"><option value="stock">積み</option><option value="wish">欲しい</option><option value="building">製作中</option></select></label>
+  </div></div>
+  <div class="sec" id="backup"><h3>バックアップと保存について</h3>
+    <p id="bkWarn" class="dirty" hidden></p>
+    <p class="m" id="bkUsage" style="margin:0 0 8px;font-size:.85rem"></p>
+    <p class="m" style="margin:0 0 8px;font-size:.85rem">記録はこの端末のブラウザに保存されます。機種変更やブラウザのデータ消去で消えるので、ときどき「記録をコピー」してメモアプリなどに貼って残してください。写真は含まれないので、残したい写真は写真フォルダのリンクを使ってください。Safariで開いた場合は「ホーム画面に追加」して使うと消えにくくなります。</p>
+    <div class="grid2" style="margin-bottom:8px"><label class="ck"><input type="checkbox" id="bkPhotos"> 写真も含める（文字量がとても大きくなります）</label>
+      <label>復元のしかた<select id="bkMode"><option value="add">いまの記録に追加</option><option value="replace">いまの記録を消して置き換え</option></select></label></div>
+    <div class="bar"><button class="btn ghost sm" id="bkCopy">記録をコピー</button><button class="btn ghost sm" id="bkRestore">貼り付けた記録を復元</button></div>
+    <label style="margin-top:8px">コピーした記録（復元するときはここに貼り付け）<textarea id="bkText" placeholder="ここに貼り付けて「貼り付けた記録を復元」を押します"></textarea></label>
+  </div>
+  <div class="sec"><h3>バックアップの通知</h3><div class="grid2">
+    <label>知らせる間隔<select data-s="bkDays"><option value="14">14日</option><option value="30">30日</option><option value="60">60日</option><option value="0">知らせない</option></select></label>
+  </div></div>
+  <div class="sec"><h3>データの削除</h3>
+    <p class="m" style="margin:0 0 8px;font-size:.85rem">この端末に保存したキット・作業ログ・写真をすべて消します。元に戻せないので、先にバックアップを取ってください。</p>
+    <button class="btn ghost sm" id="wipe">すべてのデータを削除</button></div>
+</div></div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+const ST={wish:"欲しい",stock:"積み",building:"製作中",done:"完成"};
+const STEPS=["仮組み","素組み","ゲート処理","合わせ目消し","表面処理","サフ","塗装","スミ入れ","デカール","トップコート","ウェザリング","改造","撮影","その他"];
+let db=null,assets=null,kits=[],logs=[],filter="all",openId=null;
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const yen=n=>n?"¥"+Number(n).toLocaleString("ja-JP"):"—";
+const today=()=>new Date(Date.now()+9*3600e3).toISOString().slice(0,10);
+function undoToast(t,fn){const e=$("#toast");e.textContent=t+" ";const b=document.createElement("button");b.textContent="元に戻す";b.style.cssText="margin-left:8px;border:0;border-radius:99px;padding:6px 14px;font:inherit;background:var(--accent);color:#fff;cursor:pointer";b.onclick=async()=>{e.hidden=true;await fn()};e.appendChild(b);e.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>e.hidden=true,8000)}
+function toast(t){const e=$("#toast");e.textContent=t;e.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>e.hidden=true,2200)}
+const URLS={};
+const SK="runnerlog-settings";
+const S=Object.assign({theme:"auto",stats:true,stockSum:true,hours:true,newStatus:"stock",sort:"status",bkDays:30},(()=>{try{return JSON.parse(localStorage.getItem(SK)||"{}")}catch(e){return{}}})());
+const saveS=()=>{try{localStorage.setItem(SK,JSON.stringify(S))}catch(e){}};
+const hostTheme=document.documentElement.getAttribute("data-theme");
+function applyTheme(){const r=document.documentElement;const t=S.theme==="auto"?hostTheme:S.theme;t?r.setAttribute("data-theme",t):r.removeAttribute("data-theme")}
+applyTheme();const imgUrl=id=>URLS[id]||"";
+
+function renderStats(){
+  $("#stats").hidden=!S.stats;$("#statsToggle").textContent=(S.stats?"▾":"▸")+" 集計";
+  const c=s=>kits.filter(k=>k.status===s);
+  const stockSum=c("stock").reduce((a,k)=>a+(+k.price||0),0);
+  const mins=logs.reduce((a,l)=>a+(+l.minutes||0),0);
+  $("#stats").innerHTML=[
+    [c("stock").length+"箱","積みプラ"],[yen(stockSum),"積みの合計額"],[c("building").length,"製作中"],
+    [c("done").length,"完成"],[c("wish").length,"欲しいもの"],[(mins/60).toFixed(1)+"h","作業時間の合計"]
+  ].filter(([v,l])=>!(l==="積みの合計額"&&!S.stockSum)&&!(l==="作業時間の合計"&&!S.hours)).map(([v,l])=>`<div class="stat"><b class="num">${v}</b><span>${l}</span></div>`).join("");
+}
+function renderFilters(){
+  const opts=[["all","すべて"],...Object.entries(ST)];
+  $("#filters").innerHTML=opts.map(([k,v])=>`<button class="chip" data-f="${k}" aria-pressed="${filter===k}">${v} <span class="num">${k==="all"?kits.length:kits.filter(x=>x.status===k).length}</span></button>`).join("");
+}
+function renderList(){
+  const q=$("#q").value.trim();
+  const order={building:0,stock:1,wish:2,done:3};
+  const rows=kits.filter(k=>(filter==="all"||k.status===filter)&&(!q||[k.name,k.grade,k.shop,k.memo].join(" ").toLowerCase().includes(q.toLowerCase())))
+    .sort((a,b)=>S.sort==="name"?String(a.name).localeCompare(String(b.name),"ja"):S.sort==="bought"?String(b.bought||"").localeCompare(String(a.bought||"")):(order[a.status]-order[b.status])||String(b.bought||"").localeCompare(String(a.bought||"")));
+  if(!rows.length){$("#list").innerHTML=`<div class="empty">${kits.length?"条件に合うキットはありません。":"まだキットがありません。「＋ キットを追加」から登録できます。"}</div>`;return}
+  $("#list").innerHTML=rows.map(k=>{
+    const ph=(k.photos||[])[0];
+    const h=logs.filter(l=>l.kitId===k.id).reduce((a,l)=>a+(+l.minutes||0),0);
+    const lastLog=logs.filter(l=>l.kitId===k.id).map(l=>l.date).sort().pop();
+    const own=k.status==="wish"?0:kits.filter(x=>x.name===k.name&&x.status!=="wish").length;
+    const meta=[k.grade,own>1?"所持"+own+"個":"",k.status==="wish"?(k.price?"予算 "+yen(k.price):""):yen(k.price),k.bought&&k.status!=="wish"?k.bought+" 購入":"",h?(h/60).toFixed(1)+"h 作業":""].filter(Boolean).join(" · ");
+    return `<button class="kit" data-id="${k.id}">${ph?`<img class="thumb" src="${imgUrl(ph)}" alt="">`:`<span class="thumb">${esc(k.grade||"KIT")}</span>`}
+      <span style="min-width:0"><span class="t">${esc(k.name)}</span><br><span class="m num">${esc(meta)}</span>${k.status==="building"&&(k.next||lastLog)?`<br><span class="m">${k.next?"次："+esc(k.next):""}${lastLog?(k.next?" · ":"")+"最終 "+esc(lastLog):""}</span>`:""}</span>
+      <span class="pill s-${k.status}">${ST[k.status]||"?"}</span></button>`}).join("");
+}
+function render(){renderStats();renderFilters();renderList();if(openId)renderNote()}
+
+function field(id,label,val,type="text"){return `<label>${label}<input id="${id}" type="${type}"${type==="number"?' inputmode="numeric"':""} value="${esc(val)}"></label>`}
+function area(id,label,val,ph=""){return `<label>${label}<textarea id="${id}" placeholder="${esc(ph)}">${esc(val)}</textarea></label>`}
+const GRADES=["HG","RG","MG","PG","SD","EG","30MS","30MM","RE/100","HiRM"];
+function gradeField(cur){
+  const list=[...new Set([...GRADES,...kits.map(k=>k.grade).filter(Boolean)])];
+  return `<label>グレード<select id="f_gradeSel">${list.map(g=>`<option value="${esc(g)}" ${g===cur?"selected":""}>${esc(g)}</option>`).join("")}<option value="__new">＋ 自由入力</option></select></label><label id="f_gradeBox" hidden>グレード（自由入力）<input id="f_grade" type="text" value=""></label>`;
+}
+function stepField(){
+  const list=[...new Set([...STEPS,...logs.map(l=>l.step).filter(Boolean)])];
+  return `<label>工程<select id="l_step">${list.map(s=>`<option value="${esc(s)}">${esc(s)}</option>`).join("")}<option value="__new">＋ 自由入力</option></select></label><label id="l_stepBox" hidden>工程（自由入力）<input id="l_stepNew" type="text"></label>`;
+}
+function renderNote(){
+  const k=kits.find(x=>x.id===openId); if(!k){closeNote();return}
+  const kl=logs.filter(l=>l.kitId===k.id).sort((a,b)=>String(b.date).localeCompare(String(a.date)));
+  const mins=kl.reduce((a,l)=>a+(+l.minutes||0),0);
+  $("#noteBody").innerHTML=`
+  <div class="bar"><button class="btn ghost sm" id="back">← 一覧へ</button><span class="spacer"></span>${k.status==="wish"?`<button class="btn sm" id="bought">購入した → 積みへ</button>`:""}<span class="pill s-${k.status}">${ST[k.status]}</span></div>
+  <h1 style="margin-top:8px"><small>製作ノート</small>${esc(k.name)}</h1>
+  <div class="sec"><h3>次にやること</h3>${field("f_next","再開するときの一言（例：右腕のゲート処理から）",k.next||"")}</div>
+  <div class="sec"><h3>キット情報</h3><div class="grid2">
+    ${field("f_name","キット名",k.name)}${gradeField(k.grade)}
+    <label>状態<select id="f_status">${Object.entries(ST).map(([v,l])=>`<option value="${v}" ${k.status===v?"selected":""}>${l}</option>`).join("")}</select></label>
+    ${field("f_price",k.status==="wish"?"予算・定価（円）":"価格（円）",k.price,"number")}
+    ${field("f_shop","ショップ",k.shop)}${field("f_bought","購入日",k.bought,"date")}
+    ${field("f_started","着工日",k.started,"date")}${field("f_finished","完成日",k.finished,"date")}
+  </div>
+  ${area("f_memo","メモ",k.memo,"発送予定、再販情報など")}</div>
+  <details class="sec" ${k.recipe?"open":""}><summary class="sum">塗装レシピ・使った道具</summary>${area("f_recipe","",k.recipe,"例）本体白：Mr.カラー GX1 クールホワイト ／ 合わせ目：瞬間接着剤＋320→600番")}</details>
+  <details class="sec" ${k.review?"open":""}><summary class="sum">感想・次回への反省</summary>${area("f_review","",k.review,"うまくいったこと、次に試したいこと")}</details>
+  <div class="bar savebar" style="margin-top:10px"><button class="btn" id="save">ノートを保存</button><span class="dirty" id="dirty" hidden>未保存の変更あり</span><span class="spacer"></span><button class="btn ghost sm" id="dup">複製</button><button class="btn ghost sm" id="del">削除</button></div>
+  <div class="sec"><h3>写真</h3>${folderBlock(k)}${assets?`<div class="bar"><label class="btn ghost sm" style="display:inline-block;color:var(--ink)">写真を追加<input id="f_photo" type="file" accept="image/*" multiple hidden></label></div>`:"<p class='m'>写真の追加は編集できる人だけが使えます。</p>"}
+    <div class="photos">${(k.photos||[]).map(p=>`<figure><img src="${imgUrl(p)}" alt="${esc(k.name)}の写真">${assets?`<button class="btn ghost sm" data-rmphoto="${p}" aria-label="写真を外す">×</button>`:""}</figure>`).join("")||"<span class='m'>まだ写真はありません。</span>"}</div></div>
+  <div class="sec"><h3>作業ログ <span class="num">${(mins/60).toFixed(1)}h / ${kl.length}回</span></h3>
+    <div class="grid2">${field("l_date","日付",today(),"date")}
+      ${stepField()}
+      ${field("l_min","作業時間（分）",60,"number")}</div>
+    ${field("l_memo","内容","")}${field("l_next","次にやること（空欄なら変えません）","")}
+    <div class="bar" style="margin-top:8px"><button class="btn sm" id="addLog">ログを追加</button></div>
+    <div style="margin-top:8px">${kl.map(l=>`<div class="log"><span class="num">${esc(l.date)}</span><span><span class="step">${esc(l.step)}</span>${esc(l.memo)}</span><span class="num">${l.minutes||0}分 <button class="btn ghost sm" data-rmlog="${l.id}" aria-label="ログを削除">×</button></span></div>`).join("")||"<span class='m'>まだ作業ログはありません。</span>"}</div>
+  </div>`;
+  applyDraft(k.id);
+}
+// 未保存の入力は下書きとして残し、再描画や再読み込みで消えないようにする
+const NF=["f_name","f_gradeSel","f_grade","f_status","f_price","f_shop","f_bought","f_started","f_finished","f_memo","f_recipe","f_review","f_folder","f_next","f_theme","f_want","f_notwant","f_refs"];
+const DK=id=>"runnerlog-draft-"+id;
+const mem={};
+function getDraft(id){try{return JSON.parse(localStorage.getItem(DK(id))||"null")||mem[id]}catch(e){return mem[id]}}
+function setDraft(id,d){if(d)mem[id]=d;else delete mem[id];try{d?localStorage.setItem(DK(id),JSON.stringify(d)):localStorage.removeItem(DK(id))}catch(e){}}
+const clearDraft=id=>setDraft(id,null);
+function applyDraft(id){
+  const d=getDraft(id);if(!d)return;
+  for(const f of NF){const e=document.getElementById(f);if(e&&f in d)e.value=d[f]}
+  if(d.f_gradeSel==="__new")$("#f_gradeBox").hidden=false;
+  $("#dirty").hidden=false;
+}
+document.addEventListener("input",e=>{
+  if(!openId||!NF.includes(e.target.id))return;
+  const d={};for(const f of NF){const el=document.getElementById(f);if(el)d[f]=el.value}
+  setDraft(openId,d);$("#dirty").hidden=false;
+});
+function folderBlock(k){
+  const ok=/^https:\/\//.test(k.folder||"");
+  return `<div class="grid2" style="margin-bottom:10px">${field("f_folder","写真フォルダのリンク（Googleドライブ・iCloudなど）",k.folder||"","url")}
+  ${ok?`<label>&nbsp;<a class="btn ghost sm" style="display:grid;place-items:center;text-decoration:none;color:var(--ink)" href="${esc(k.folder)}" target="_blank" rel="noopener">写真フォルダを開く</a></label>`:""}</div>`;
+}
+function openNote(id){openId=id;renderNote();$("#note").hidden=false;$("#note").scrollTop=0}
+function closeNote(){openId=null;$("#note").hidden=true}
+const v=id=>{const e=document.getElementById(id);return e?e.value.trim():""};
+
+async function saveKit(){
+  if(!db)return toast("保存できません。サインインを確認してください");
+  const d={name:v("f_name")||"名称未設定",grade:v("f_gradeSel")==="__new"?v("f_grade"):v("f_gradeSel"),status:v("f_status"),price:Number(v("f_price"))||0,shop:v("f_shop"),bought:v("f_bought"),started:v("f_started"),finished:v("f_finished"),memo:v("f_memo"),recipe:v("f_recipe"),review:v("f_review"),folder:v("f_folder"),next:v("f_next"),theme:v("f_theme"),want:v("f_want"),notWant:v("f_notwant"),refs:v("f_refs")};
+  const id=openId;try{await db.collection("kits").doc(id).update(d);clearDraft(id);const dd=$("#dirty");if(dd)dd.hidden=true;toast("保存しました")}catch(e){toast("保存できませんでした。容量不足の可能性があります。入力は残っているので、設定でバックアップを取り、不要な写真を消してください")}
+}
+document.addEventListener("click",async e=>{
+  const t=e.target.closest("button,[data-id]");if(!t)return;
+  if(t.dataset.f){filter=t.dataset.f;renderFilters();renderList()}
+  else if(t.classList.contains("kit"))openNote(t.dataset.id);
+  else if(t.id==="back"){
+    if(!$("#dirty").hidden&&t.dataset.sure!=="1"){t.dataset.sure="1";t.textContent="未保存です。もう一度押すと破棄";return}
+    if(t.dataset.sure==="1")clearDraft(openId);closeNote();
+  }
+  else if(t.id==="save")saveKit();
+  else if(t.id==="dup"){
+    const k=kits.find(x=>x.id===openId);if(!k||!db)return;
+    try{const r=await db.collection("kits").add({name:k.name,grade:k.grade||"",status:k.status==="wish"?"wish":"stock",price:k.price||0,shop:k.shop||"",memo:k.memo||"",photos:[],created:Date.now()});openNote(r.id);toast("複製しました")}catch(err){toast("複製できませんでした")}
+  }
+  else if(t.id==="bought"){
+    const k=kits.find(x=>x.id===openId);if(!k||!db)return;
+    const d=getDraft(openId);if(d){d.f_status="stock";d.f_bought=d.f_bought||k.bought||today();setDraft(openId,d)}
+    try{await db.collection("kits").doc(openId).update({status:"stock",bought:k.bought||today()});toast("積みに移しました。価格とショップを入れて保存してください")}catch(err){toast("変更できませんでした")}
+  }
+  else if(t.id==="addKit"){
+    if(!db)return toast("保存できません。サインインを確認してください");
+    const st=filter==="all"?S.newStatus:filter;
+    try{const r=await db.collection("kits").add({name:"新しいキット",grade:"HG",status:st,price:0,photos:[],created:Date.now()});openNote(r.id)}catch(err){toast("追加できませんでした")}
+  }
+  else if(t.id==="del"){
+    if(t.dataset.sure!=="1"){t.dataset.sure="1";t.textContent="「"+((kits.find(x=>x.id===openId)||{}).name||"")+"」を削除？もう一度押す";return}
+    const id=openId;const kk=kits.find(x=>x.id===id);const kl=logs.filter(l=>l.kitId===id);closeNote();
+    try{await db.collection("kits").doc(id).delete();for(const l of kl)await db.collection("logs").doc(l.id).delete();
+      undoToast("「"+((kk||{}).name||"")+"」を削除しました",async()=>{
+        if(!kk)return;const {id:_i,...kd}=kk;const r=await db.collection("kits").add(kd);
+        for(const {id:_l,kitId,...ld} of kl)await db.collection("logs").add({...ld,kitId:r.id});toast("元に戻しました")})}catch(err){toast("削除できませんでした")}
+  }
+  else if(t.id==="addLog"){
+    try{const nx=v("l_next");await db.collection("logs").add({kitId:openId,date:v("l_date")||today(),step:v("l_step")==="__new"?(v("l_stepNew")||"その他"):v("l_step"),minutes:Number(v("l_min"))||0,memo:v("l_memo")});
+      if(nx)await db.collection("kits").doc(openId).update({next:nx});
+      const k=kits.find(x=>x.id===openId);
+      if(k&&k.status==="stock")await db.collection("kits").doc(openId).update({status:"building",started:k.started||v("l_date")||today()});
+      toast("ログを追加しました")}catch(err){toast("追加できませんでした")}
+  }
+  else if(t.dataset.rmlog){try{await db.collection("logs").doc(t.dataset.rmlog).delete()}catch(err){toast("削除できませんでした")}}
+  else if(t.dataset.rmphoto){
+    const k=kits.find(x=>x.id===openId);
+    try{await db.collection("kits").doc(openId).update({photos:(k.photos||[]).filter(p=>p!==t.dataset.rmphoto)});await assets.delete(t.dataset.rmphoto).catch(()=>{})}catch(err){toast("外せませんでした")}
+  }
+});
+document.addEventListener("change",async e=>{
+  if(e.target.id==="f_gradeSel"){const b=$("#f_gradeBox");b.hidden=e.target.value!=="__new";if(!b.hidden)$("#f_grade").focus();return}
+  if(e.target.id==="l_step"){const b=$("#l_stepBox");b.hidden=e.target.value!=="__new";if(!b.hidden)$("#l_stepNew").focus();return}
+  if(e.target.id!=="f_photo"||!assets)return;
+  const k=kits.find(x=>x.id===openId);const ids=[...(k.photos||[])];
+  toast("アップロード中…");
+  try{for(const f of e.target.files){const r=await assets.upload(f);ids.push(r.id)}
+    await db.collection("kits").doc(openId).update({photos:ids});toast("写真を追加しました")}catch(err){toast("写真を保存できませんでした。容量不足の可能性があります。設定で使用量を確認してください")}
+});
+$("#q").addEventListener("input",renderList);
+/* ===== 製作プラン・記録・タイムライン・AI相談 ===== */
+const RT=[["memo","メモ・アイデア"],["work","作業"],["try","試し・発見"],["decide","方針決定"],["done","完成・振り返り"]];
+const IDEA=[["","判断なし"],["cand","候補"],["adopt","採用"],["skip","見送り"]];
+const PL={theme:"こんなふうに作りたい",want:"今回やりたいこと",notWant:"今回やらないこと",next:"次にやること"};
+const newRec=()=>({type:"memo",text:"",step:"その他",min:"",date:today(),ref:"",next:"",files:[]});
+let REC=newRec(),recFilter="all";
+const rtype=l=>l.type||"work";
+const rtLabel=t=>(RT.find(x=>x[0]===t)||[0,"作業"])[1];
+function linkList(t){
+  const u=(t||"").match(/https?:\/\/[^\s]+/g)||[];
+  return u.length?`<div class="m" style="margin-top:4px;overflow-wrap:anywhere">${u.map(x=>`<a href="${esc(x)}" target="_blank" rel="noopener">${esc(x.length>44?x.slice(0,44)+"…":x)}</a>`).join(" ・ ")}</div>`:"";
+}
+function recRow(l){
+  const t=rtype(l);
+  const ph=(l.photos||[]).map(p=>`<img src="${imgUrl(p)}" alt="記録の写真">`).join("");
+  return `<div class="rec"><div class="recH">
+    <input type="date" class="rdate" data-ldate="${l.id}" value="${esc(l.date)}" aria-label="日付">
+    <span class="step">${rtLabel(t)}</span>
+    ${t==="work"&&l.step?`<span class="m">${esc(l.step)}</span>`:""}${t==="work"&&l.minutes?`<span class="m num">${l.minutes}分</span>`:""}
+    ${t==="memo"?`<select class="ideasel" data-lidea="${l.id}" aria-label="アイデアの判断">${IDEA.map(([v,n])=>`<option value="${v}" ${(l.idea||"")===v?"selected":""}>${n}</option>`).join("")}</select>`:""}
+    <span class="spacer"></span><button class="btn ghost sm" data-rmrec="${l.id}" aria-label="記録を削除">×</button></div>
+    ${l.memo?`<div class="recT">${esc(l.memo)}</div>`:""}${ph?`<div class="recPh">${ph}</div>`:""}${linkList(l.ref)}
+    ${t==="memo"&&l.idea==="adopt"?`<button class="btn ghost sm" style="margin-top:6px" data-reflect="${l.id}">現在の製作プランへ反映</button>`:""}</div>`;
+}
+function renderNote(){
+  const k=kits.find(x=>x.id===openId); if(!k){closeNote();return}
+  const kl=logs.filter(l=>l.kitId===k.id).sort((a,b)=>String(b.date).localeCompare(String(a.date))||((b.created||0)-(a.created||0)));
+  const mins=kl.filter(l=>rtype(l)==="work").reduce((a,l)=>a+(+l.minutes||0),0);
+  const shown=kl.filter(l=>recFilter==="all"||(recFilter==="work"?rtype(l)==="work":rtype(l)!=="work"&&rtype(l)!=="done"));
+  const steps=[...new Set([...STEPS,...logs.map(l=>l.step).filter(Boolean)])];
+  const opt=(arr,cur)=>arr.map(([v,n])=>`<option value="${v}" ${cur===v?"selected":""}>${n}</option>`).join("");
+  $("#noteBody").innerHTML=`
+  <div class="bar"><button class="btn ghost sm" id="back">← 一覧へ</button><span class="spacer"></span>${k.status==="wish"?`<button class="btn sm" id="bought">購入した → 積みへ</button>`:""}<span class="pill s-${k.status}">${ST[k.status]}</span></div>
+  <h1 style="margin-top:8px"><small>製作ノート</small>${esc(k.name)}</h1>
+  <div class="sec"><div class="grid2">${field("f_name","キット名",k.name)}${gradeField(k.grade)}
+    <label>状態<select id="f_status">${Object.entries(ST).map(([v,l])=>`<option value="${v}" ${k.status===v?"selected":""}>${l}</option>`).join("")}</select></label></div></div>
+  <div class="sec"><h3>現在の製作プラン</h3><p class="m" style="margin:0 0 10px;font-size:.82rem">どれも空のままでOKです。あとからいつでも書き足したり、変えたりできます。</p><div class="stack">
+    ${field("f_theme","こんなふうに作りたい（任意・あとから変更できます）",k.theme||"")}
+    ${field("f_next","次にやること（任意・あとから変更できます）",k.next||"")}
+    <details ${k.want||k.notWant||k.refs?"open":""}><summary class="sum">今回やりたいこと・やらないこと・参考資料</summary><div class="stack">
+      ${area("f_want","今回やりたいこと",k.want||"")}${area("f_notwant","今回やらないこと",k.notWant||"")}${area("f_refs","参考画像・URL・書籍名とページ",k.refs||"")}${linkList(k.refs)}</div></details>
+    <details><summary class="sum">方針を変える（以前の内容と理由を履歴に残す）</summary><div class="stack">
+      <label>変える項目<select id="chgField">${Object.entries(PL).map(([v,n])=>`<option value="${v}">${n}</option>`).join("")}</select></label>
+      ${area("chgVal","変更後の内容",k.theme||"")}${field("chgReason","理由（任意）","")}
+      <div><button class="btn ghost sm" id="applyChg">変更して履歴に残す</button></div></div></details></div></div>
+  <div class="sec"><h3>＋ 記録</h3><div class="stack">
+    <label>種類<select id="r_type">${opt(RT,REC.type)}</select></label>
+    <div class="grid2">${REC.type==="work"?`<label>工程<select id="r_step">${steps.map(s=>`<option ${REC.step===s?"selected":""}>${esc(s)}</option>`).join("")}</select></label>${field("r_min","作業時間（分・任意）",REC.min,"number")}`:""}</div>
+    <label>内容<textarea id="r_text" placeholder="一言でOK。写真だけでも保存できます">${esc(REC.text)}</textarea></label>
+    <details ${REC.ref||REC.next||REC.files.length||REC.date!==today()?"open":""}><summary class="sum">詳細を追加（日付・写真・工程・時間・リンク）</summary><div class="stack">
+      <div class="grid2">${field("r_date","日付",REC.date,"date")}</div>
+      ${field("r_ref","参考リンク（任意）",REC.ref)}${field("r_next","次にやること（空欄なら変えません）",REC.next)}
+      ${assets?`<div class="bar"><label class="btn ghost sm" style="display:inline-grid;place-items:center;color:var(--ink)">写真を選ぶ<input id="r_photo" type="file" accept="image/*" multiple hidden></label><span class="m">${REC.files.length?REC.files.length+"枚を選択中":""}</span></div>`:""}</div></details>
+    <div><button class="btn" id="addRec">記録する</button></div></div></div>
+  <div class="sec"><h3>タイムライン <span class="num">${(mins/60).toFixed(1)}h / ${kl.length}件</span></h3>
+    <div class="bar">${[["all","すべて"],["work","作業"],["idea","アイデア"]].map(([v,n])=>`<button class="chip" data-rf="${v}" aria-pressed="${recFilter===v}">${n}</button>`).join("")}</div>
+    ${shown.map(recRow).join("")||"<span class='m'>まだ記録がありません。上の「＋記録」から、一言だけでも残せます。</span>"}</div>
+  <details class="sec"><summary class="sum">購入・日付・メモ</summary><div class="grid2">
+    ${field("f_price",k.status==="wish"?"予算・定価（円）":"価格（円）",k.price,"number")}${field("f_shop","ショップ",k.shop)}${field("f_bought","購入日",k.bought,"date")}
+    ${field("f_started","着工日",k.started,"date")}${field("f_finished","完成日",k.finished,"date")}</div>
+    <div style="margin-top:10px">${area("f_memo","メモ",k.memo,"発送予定、再販情報など")}</div></details>
+  <details class="sec" ${k.recipe?"open":""}><summary class="sum">塗装レシピ・使った道具</summary>${area("f_recipe","",k.recipe,"例）本体白：Mr.カラー GX1 クールホワイト")}</details>
+  <details class="sec" ${k.review?"open":""}><summary class="sum">感想・次回への反省</summary>${area("f_review","",k.review,"うまくいったこと、次に試したいこと")}</details>
+  <details class="sec"><summary class="sum">写真・写真フォルダ</summary>${folderBlock(k)}
+    ${assets?`<div class="bar"><label class="btn ghost sm" style="display:inline-block;color:var(--ink)">写真を追加<input id="f_photo" type="file" accept="image/*" multiple hidden></label></div>`:""}
+    <div class="photos">${(k.photos||[]).map(p=>`<figure><img src="${imgUrl(p)}" alt="${esc(k.name)}の写真">${assets?`<button class="btn ghost sm" data-rmphoto="${p}" aria-label="写真を外す">×</button>`:""}</figure>`).join("")||"<span class='m'>まだ写真はありません。</span>"}</div></details>
+  <details class="sec"><summary class="sum">AIに相談（任意）</summary><div class="stack">
+    <div class="bar">${[["img","完成イメージを広げたい"],["cmp","案を比較して決めたい"],["next","次の作業を整理したい"]].map(([v,n])=>`<button class="chip" data-ai="${v}">${n}</button>`).join("")}</div>
+    <div class="m" style="font-size:.8rem">相談文に入れる記録を選べます</div>
+    ${kl.slice(0,8).map((l,i)=>`<label class="ck"><input type="checkbox" data-aisel="${l.id}" ${i<3?"checked":""}> ${esc(l.date)} ${rtLabel(rtype(l))}：${esc((l.memo||"").slice(0,24))}</label>`).join("")}
+    <label>相談文（送る前に確認・編集できます）<textarea id="ai_text" style="min-height:150px" placeholder="上の3つから選ぶと、ここに相談文ができます"></textarea></label>
+    <div><button class="btn ghost sm" id="aiCopy">相談文をコピー</button></div>
+    <label>AIの回答（貼り付けてメモに保存できます）<textarea id="ai_ans"></textarea></label>
+    <div><button class="btn ghost sm" id="aiSave">相談結果をメモに保存</button></div>
+    <p class="m" style="margin:0;font-size:.8rem">AIの提案は、あなたが「採用」するまで製作プランには入りません。</p></div></details>
+  <div class="bar savebar" style="margin-top:10px"><button class="btn" id="save">ノートを保存</button><span class="dirty" id="dirty" hidden>未保存の変更あり</span><span class="spacer"></span><button class="btn ghost sm" id="dup">複製</button><button class="btn ghost sm" id="del">削除</button></div>`;
+  applyDraft(k.id);
+}
+function openNote(id){openId=id;REC=newRec();recFilter="all";renderNote();$("#note").hidden=false;$("#note").scrollTop=0}
+async function changePlan(field,val,reason){
+  const k=kits.find(x=>x.id===openId);if(!k)return;
+  if(getDraft(k.id))return toast("先に「ノートを保存」を押してください");
+  const before=k[field]||"";if(before===val)return toast("内容が変わっていません");
+  try{await db.collection("kits").doc(k.id).update({[field]:val});
+    await db.collection("logs").add({kitId:k.id,type:"decide",date:today(),created:Date.now(),memo:`「${PL[field]}」を変更\n前：${before||"（未入力）"}\n後：${val||"（未入力）"}\n理由：${reason||"（未記入）"}`});
+    toast("変更して履歴に残しました")}catch(e){toast("変更できませんでした")}
+}
+function aiPrompt(kind){
+  const k=kits.find(x=>x.id===openId);if(!k)return"";
+  const sel=[...document.querySelectorAll("[data-aisel]:checked")].map(e=>logs.find(l=>l.id===e.dataset.aisel)).filter(Boolean);
+  const goal={img:"完成イメージを広げるアイデアを、方向性の違う3案ほど出してください",cmp:"私が迷っている案を比べ、それぞれの長所と短所を整理してください",next:"次にやる作業を、順番と注意点つきで整理してください"}[kind];
+  const row=(n,v)=>v?`【${n}】${v}\n`:"";
+  return `あなたはガンプラ製作の相談相手です。以下の製作プランと記録を踏まえて、${goal}。提案は選択肢として示し、決めるのは私です。\n\n【キット】${k.name}${k.grade?`（${k.grade}）`:""}\n${row("こんなふうに作りたい",k.theme)}${row("今回やりたいこと",k.want)}${row("今回やらないこと",k.notWant)}${row("次にやること",k.next)}${row("参考",k.refs)}${sel.length?"\n【記録】\n"+sel.map(l=>`・${l.date} ${rtLabel(rtype(l))}：${l.memo||""}`).join("\n")+"\n":""}`;
+}
+document.addEventListener("input",e=>{
+  const m={r_text:"text",r_date:"date",r_min:"min",r_ref:"ref",r_next:"next",r_step:"step"}[e.target.id];
+  if(m)REC[m]=e.target.value;
+});
+document.addEventListener("change",async e=>{
+  const t=e.target;
+  if(t.id==="r_type"){REC.type=t.value;renderNote();return}
+  if(t.id==="r_step"){REC.step=t.value;return}
+  if(t.id==="r_photo"){REC.files=[...t.files];renderNote();return}
+  if(t.id==="chgField"){const k=kits.find(x=>x.id===openId);$("#chgVal").value=(k&&k[t.value])||"";return}
+  if(t.dataset&&t.dataset.ldate){try{await db.collection("logs").doc(t.dataset.ldate).update({date:t.value||today()})}catch(err){toast("日付を変えられませんでした")}return}
+  if(t.dataset&&t.dataset.lidea){try{await db.collection("logs").doc(t.dataset.lidea).update({idea:t.value})}catch(err){toast("変更できませんでした")}}
+});
+document.addEventListener("click",async e=>{
+  const t=e.target.closest("#addRec,[data-rf],[data-rmrec],[data-reflect],[data-ai],#aiCopy,#aiSave,#applyChg,#statsToggle");if(!t)return;
+  if(t.id==="statsToggle"){S.stats=!S.stats;saveS();renderStats();return}
+  if(t.dataset.rf){recFilter=t.dataset.rf;renderNote();return}
+  if(t.dataset.ai){$("#ai_text").value=aiPrompt(t.dataset.ai);return}
+  if(t.id==="aiCopy"){const ta=$("#ai_text");if(!ta.value)return toast("先に相談の種類を選んでください");
+    try{await navigator.clipboard.writeText(ta.value);toast("相談文をコピーしました")}catch(err){ta.focus();ta.select();toast("枠の中の文字をコピーしてください")}return}
+  if(t.id==="applyChg"){await changePlan($("#chgField").value,$("#chgVal").value.trim(),$("#chgReason").value.trim());return}
+  if(t.dataset.reflect){const l=logs.find(x=>x.id===t.dataset.reflect),k=kits.find(x=>x.id===openId);if(!l||!k)return;
+    await changePlan("want",(k.want?k.want+"\n":"")+l.memo,"アイデアを採用");return}
+  if(t.id==="aiSave"){const a=$("#ai_ans").value.trim();if(!a)return toast("AIの回答を貼り付けてください");
+    try{await db.collection("logs").add({kitId:openId,type:"memo",date:today(),created:Date.now(),memo:"【AI相談の結果】\n"+a});toast("メモに保存しました")}catch(err){toast("保存できませんでした")}return}
+  if(t.dataset.rmrec){
+    const l=logs.find(x=>x.id===t.dataset.rmrec);if(!l)return;
+    try{await db.collection("logs").doc(l.id).delete();const {id:_i,...rest}=l;undoToast("記録を削除しました",async()=>{await db.collection("logs").add(rest);toast("元に戻しました")})}catch(err){toast("削除できませんでした")}return}
+  if(t.id==="addRec"){
+    const k=kits.find(x=>x.id===openId);if(!k)return;
+    const text=REC.text.trim();
+    if(!text&&!REC.files.length)return toast("内容か写真を入れてください");
+    const ids=[];
+    if(REC.files.length){
+      if(!assets)return toast("写真を保存できません");
+      toast("写真を保存中…");
+      try{for(const f of REC.files)ids.push((await assets.upload(f)).id)}catch(err){return toast("写真を保存できませんでした。入力は残っています")}
+    }
+    const o={kitId:openId,type:REC.type,date:REC.date||today(),memo:text,created:Date.now()};
+    if(REC.type==="work"){o.step=REC.step||"その他";o.minutes=Number(REC.min)||0}
+    if(ids.length)o.photos=ids;if(REC.ref.trim())o.ref=REC.ref.trim();
+    const nx=REC.next.trim();
+    try{
+      await db.collection("logs").add(o);
+      const up={};if(nx)up.next=nx;
+      if(REC.type==="work"&&k.status==="stock"){up.status="building";up.started=k.started||o.date}
+      if(Object.keys(up).length)await db.collection("kits").doc(openId).update(up);
+      REC=newRec();renderNote();toast("記録しました");
+    }catch(err){toast("保存できませんでした。入力は残っています")}
+  }
+});
+
+render();
+
+const IDB={db:null};
+const idbOpen=()=>new Promise((res,rej)=>{const r=indexedDB.open("runnerlog",1);r.onupgradeneeded=()=>["kits","logs","blobs"].forEach(s=>r.result.createObjectStore(s));r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)});
+const tx=(s,m,f)=>IDB.db?new Promise((res,rej)=>{const t=IDB.db.transaction(s,m);const q=f(t.objectStore(s));t.oncomplete=()=>res(q&&q.result);t.onerror=()=>rej(t.error)}):Promise.resolve([]);
+function makeCol(name){
+  let rows=[];const ls=[];
+  const snap=()=>({docs:rows.map(r=>({id:r.id,data:()=>{const{id,...d}=r;return d}}))});
+  const emit=()=>ls.forEach(f=>f(snap()));
+  const save=r=>tx(name,"readwrite",s=>s.put(r,r.id));
+  return{
+    async load(){try{rows=(await tx(name,"readonly",s=>s.getAll()))||[]}catch(e){rows=[]}},
+    onSnapshot(f){ls.push(f);f(snap())},
+    async add(o){const id=name[0]+Date.now().toString(36)+Math.random().toString(36).slice(2,6);const r={...o,id};await save(r);rows.push(r);emit();return{id}},
+    doc(id){return{
+      async update(d){const r=rows.find(x=>x.id===id);if(!r)return;Object.assign(r,d);await save(r);emit()},
+      async delete(){await tx(name,"readwrite",s=>s.delete(id));rows=rows.filter(x=>x.id!==id);emit()}}}
+  };
+}
+async function shrink(file){
+  try{
+    const bmp=await createImageBitmap(file);const sc=Math.min(1,1280/Math.max(bmp.width,bmp.height));
+    const c=document.createElement("canvas");c.width=Math.round(bmp.width*sc);c.height=Math.round(bmp.height*sc);
+    c.getContext("2d").drawImage(bmp,0,0,c.width,c.height);
+    return await new Promise(r=>c.toBlob(b=>r(b||file),"image/jpeg",.8));
+  }catch(e){return file}
+}
+const photoStore={
+  async upload(file){const blob=await shrink(file);const id="p"+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+    await tx("blobs","readwrite",s=>s.put(blob,id));URLS[id]=URL.createObjectURL(blob);return{id}},
+  async delete(id){await tx("blobs","readwrite",s=>s.delete(id));if(URLS[id]){URL.revokeObjectURL(URLS[id]);delete URLS[id]}}
+};
+async function loadBlobs(){
+  if(!IDB.db)return;
+  await new Promise(res=>{const t=IDB.db.transaction("blobs","readonly");const s=t.objectStore("blobs");const q=s.openCursor();
+    q.onsuccess=()=>{const c=q.result;if(c){URLS[c.key]=URL.createObjectURL(c.value);c.continue()}};t.oncomplete=res;t.onerror=res});
+}
+const LS={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
+async function usage(){
+  try{
+    if(navigator.storage&&navigator.storage.persist)navigator.storage.persist().catch(()=>{});
+    const e=await navigator.storage.estimate();if(!e||!e.quota)return;
+    const mb=n=>(n/1048576).toFixed(n<1048576*10?1:0);
+    $("#bkUsage").textContent=`保存容量：${mb(e.usage)}MB 使用中 / この端末で使える目安 ${mb(e.quota)}MB（写真1枚は約0.3MB）`;
+  }catch(err){}
+}
+function bkCheck(){
+  const w=$("#bkWarn");if(!w)return;
+  if(!LS.get("runnerlog-first"))LS.set("runnerlog-first",String(Date.now()));
+  const base=+(LS.get("runnerlog-backup")||LS.get("runnerlog-first")||Date.now());
+  const days=Math.floor((Date.now()-base)/864e5);
+  const due=!!(kits.length&&S.bkDays&&days>=S.bkDays);
+  w.hidden=!due;$("#bkBanner").hidden=!due;
+  if(!w.hidden)w.textContent=LS.get("runnerlog-backup")?`最後のバックアップから${days}日たっています。記録をコピーして残しましょう。`:`まだバックアップをしていません。記録をコピーして残しましょう。`;
+}
+document.addEventListener("click",async e=>{
+  const t=e.target.closest("#oldBk");if(!t)return;
+  const ta=$("#bkText");
+  if(t.id==="bkCopy"){
+    const data=JSON.stringify({app:"runnerlog",v:1,kits:kits.map(({photos,...k})=>k),logs});
+    ta.value=data;
+    try{await navigator.clipboard.writeText(data);toast("記録をコピーしました")}catch(err){ta.focus();ta.select();toast("枠の中の文字を全部コピーしてください")}
+    LS.set("runnerlog-backup",String(Date.now()));bkCheck();
+  }else{
+    let d;try{d=JSON.parse(ta.value)}catch(err){return toast("記録の形式が正しくありません")}
+    if(!d||d.app!=="runnerlog"||!Array.isArray(d.kits))return toast("ランナーログの記録ではありません");
+    if(t.dataset.sure!=="1"){t.dataset.sure="1";t.textContent=`${d.kits.length}件を追加します。もう一度押すと実行`;return}
+    t.dataset.sure="";t.textContent="貼り付けた記録を復元";
+    const map={};
+    for(const {id,...k} of d.kits){const r=await db.collection("kits").add({...k,photos:[]});map[id]=r.id}
+    for(const {id,kitId,photos,...l} of (d.logs||[])){if(map[kitId]){const lp=await restorePhotos(photos,d.blobs);await db.collection("logs").add({...l,...(lp.length?{photos:lp}:{}),kitId:map[kitId]})}}
+    ta.value="";toast("復元しました");
+  }
+});
+function syncSettings(){
+  document.querySelectorAll("[data-s]").forEach(e=>{const v=S[e.dataset.s];if(e.type==="checkbox")e.checked=!!v;else e.value=String(v)});
+}
+document.addEventListener("change",e=>{
+  const k=e.target.dataset&&e.target.dataset.s;if(!k)return;
+  S[k]=e.target.type==="checkbox"?e.target.checked:(k==="bkDays"?Number(e.target.value):e.target.value);
+  saveS();applyTheme();render();bkCheck();
+});
+document.addEventListener("click",async e=>{
+  const t=e.target.closest("#openSettings,#bkBanner,#closeSettings,#wipe");if(!t)return;
+  const p=$("#settings");
+  if(t.id==="closeSettings"){p.hidden=true;return}
+  if(t.id==="wipe"){
+    if(t.dataset.sure!=="1"){t.dataset.sure="1";t.textContent="本当に全部消しますか？もう一度押すと削除";return}
+    t.dataset.sure="";t.textContent="すべてのデータを削除";
+    try{for(const k of kits)await db.collection("kits").doc(k.id).delete();for(const l of logs)await db.collection("logs").doc(l.id).delete();
+      await tx("blobs","readwrite",s=>s.clear());for(const id of Object.keys(URLS)){URL.revokeObjectURL(URLS[id]);delete URLS[id]}
+      LS.set("runnerlog-backup","");toast("すべて削除しました");usage()}catch(err){toast("削除できませんでした")}
+    return;
+  }
+  p.hidden=false;p.scrollTop=0;syncSettings();usage();bkCheck();
+});
+const blobToData=b=>new Promise(r=>{const f=new FileReader();f.onload=()=>r(f.result);f.readAsDataURL(b)});
+function dataToBlob(u){const [h,b]=u.split(",");const m=/data:(.*?);base64/.exec(h)[1];const bin=atob(b);const a=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)a[i]=bin.charCodeAt(i);return new Blob([a],{type:m})}
+async function restorePhotos(list,blobs){const out=[];
+  for(const pid of list||[]){const u=(blobs||{})[pid];if(!u)continue;const nid="p"+Date.now().toString(36)+Math.random().toString(36).slice(2,6);const b=dataToBlob(u);await tx("blobs","readwrite",s=>s.put(b,nid));URLS[nid]=URL.createObjectURL(b);out.push(nid)}
+  return out}
+async function wipeAll(){for(const k of [...kits])await db.collection("kits").doc(k.id).delete();for(const l of [...logs])await db.collection("logs").doc(l.id).delete();
+  await tx("blobs","readwrite",s=>s.clear());for(const id of Object.keys(URLS)){URL.revokeObjectURL(URLS[id]);delete URLS[id]}}
+document.addEventListener("click",async e=>{
+  const t=e.target.closest("#bkCopy,#bkRestore");if(!t)return;
+  const ta=$("#bkText");
+  if(t.id==="bkCopy"){
+    const withP=$("#bkPhotos").checked;
+    const out={app:"runnerlog",v:2,kits:kits.map(k=>withP?k:(({photos,...r})=>r)(k)),logs:withP?logs:logs.map(({photos,...l})=>l)};
+    if(withP){toast("写真をまとめています…");out.blobs={};for(const id of [...kits.flatMap(k=>k.photos||[]),...logs.flatMap(l=>l.photos||[])]){const b=await tx("blobs","readonly",s=>s.get(id));if(b)out.blobs[id]=await blobToData(b)}}
+    const data=JSON.stringify(out);ta.value=data;
+    const mb=(data.length/1048576).toFixed(1);
+    try{await navigator.clipboard.writeText(data);toast(`記録をコピーしました（${mb}MB）`)}catch(err){ta.focus();ta.select();toast(`枠の中の文字（${mb}MB）を全部コピーしてください`)}
+    LS.set("runnerlog-backup",String(Date.now()));bkCheck();
+  }else{
+    let d;try{d=JSON.parse(ta.value)}catch(err){return toast("記録の形式が正しくありません")}
+    if(!d||d.app!=="runnerlog"||!Array.isArray(d.kits))return toast("ランナーログの記録ではありません");
+    const mode=$("#bkMode").value,np=Object.keys(d.blobs||{}).length;
+    if(t.dataset.sure!=="1"){t.dataset.sure="1";t.textContent=`${d.kits.length}件${np?`・写真${np}枚`:""}を${mode==="replace"?"置き換えで":"追加で"}復元。もう一度押すと実行`;return}
+    t.dataset.sure="";t.textContent="貼り付けた記録を復元";
+    try{
+      if(mode==="replace")await wipeAll();
+      const map={};
+      for(const {id,photos,...k} of d.kits){
+        const np2=[];
+        for(const pid of photos||[]){const u=(d.blobs||{})[pid];if(!u)continue;const nid="p"+Date.now().toString(36)+Math.random().toString(36).slice(2,6);const b=dataToBlob(u);await tx("blobs","readwrite",s=>s.put(b,nid));URLS[nid]=URL.createObjectURL(b);np2.push(nid)}
+        const r=await db.collection("kits").add({...k,photos:np2});map[id]=r.id}
+      for(const {id,kitId,photos,...l} of (d.logs||[])){if(map[kitId]){const lp=await restorePhotos(photos,d.blobs);await db.collection("logs").add({...l,...(lp.length?{photos:lp}:{}),kitId:map[kitId]})}}
+      ta.value="";toast("復元しました");usage();
+    }catch(err){toast("復元できませんでした。容量や記録の形式を確認してください（"+((err&&err.message)||err)+"）")}
+  }
+});
+document.addEventListener("click",e=>{if(e.target.closest("#seenBtn")){LS.set("runnerlog-seen","1");$("#firstNote").hidden=true}});
+(async()=>{
+  if(!LS.get("runnerlog-seen"))$("#firstNote").hidden=false;
+  try{IDB.db=await idbOpen()}catch(e){toast("この状態では保存できません。プライベートモードを解除してください")}
+  const cols={kits:makeCol("kits"),logs:makeCol("logs")};
+  await Promise.all([cols.kits.load(),cols.logs.load()]);
+  await loadBlobs();
+  db={collection:n=>cols[n]};assets=photoStore;
+  db.collection("kits").onSnapshot(s=>{kits=s.docs.map(d=>({id:d.id,...d.data()}));render();bkCheck();usage()});
+  db.collection("logs").onSnapshot(s=>{logs=s.docs.map(d=>({id:d.id,...d.data()}));render()});
+})();
+</script>
+
+</body></html>
