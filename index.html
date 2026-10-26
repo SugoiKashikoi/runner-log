@@ -133,6 +133,7 @@ input,select,textarea{background:var(--paper)}
 :root{--glass:rgba(255,255,255,.88)}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--glass:rgba(34,38,50,.9)}}
 :root[data-theme="dark"]{--glass:rgba(34,38,50,.9)}
+summary.sum{min-height:44px;cursor:pointer;padding:10px 0;touch-action:manipulation}summary.sum:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 </style>
 
 <div class="wrap" id="main">
@@ -191,13 +192,12 @@ const yen=n=>n?"¥"+Number(n).toLocaleString("ja-JP"):"—";
 const today=()=>new Date(Date.now()+9*3600e3).toISOString().slice(0,10);
 function undoToast(t,fn){const e=$("#toast");e.textContent=t+" ";const b=document.createElement("button");b.textContent="元に戻す";b.style.cssText="margin-left:8px;border:0;border-radius:99px;padding:6px 14px;font:inherit;background:var(--accent);color:#fff;cursor:pointer";b.onclick=async()=>{e.hidden=true;await fn()};e.appendChild(b);e.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>e.hidden=true,8000)}
 function toast(t){const e=$("#toast");e.textContent=t;e.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>e.hidden=true,2200)}
-const URLS={};
 const SK="runnerlog-settings";
 const S=Object.assign({theme:"auto",stats:true,stockSum:true,hours:true,newStatus:"stock",sort:"status",bkDays:30},(()=>{try{return JSON.parse(localStorage.getItem(SK)||"{}")}catch(e){return{}}})());
 const saveS=()=>{try{localStorage.setItem(SK,JSON.stringify(S))}catch(e){}};
 const hostTheme=document.documentElement.getAttribute("data-theme");
 function applyTheme(){const r=document.documentElement;const t=S.theme==="auto"?hostTheme:S.theme;t?r.setAttribute("data-theme",t):r.removeAttribute("data-theme")}
-applyTheme();const imgUrl=id=>URLS[id]||"";
+applyTheme();const imgUrl=id=>assets?.url(id)||"";
 
 function renderStats(){
   $("#stats").hidden=!S.stats;$("#statsToggle").textContent=(S.stats?"▾":"▸")+" 集計";
@@ -259,8 +259,8 @@ function renderNote(){
     ${field("f_started","着工日",k.started,"date")}${field("f_finished","完成日",k.finished,"date")}
   </div>
   ${area("f_memo","メモ",k.memo,"発送予定、再販情報など")}</div>
-  <details class="sec" ${k.recipe?"open":""}><summary class="sum">塗装レシピ・使った道具</summary>${area("f_recipe","",k.recipe,"例）本体白：Mr.カラー GX1 クールホワイト ／ 合わせ目：瞬間接着剤＋320→600番")}</details>
-  <details class="sec" ${k.review?"open":""}><summary class="sum">感想・次回への反省</summary>${area("f_review","",k.review,"うまくいったこと、次に試したいこと")}</details>
+  <details class="sec"><summary class="sum">塗装レシピ・使った道具</summary>${area("f_recipe","",k.recipe,"例）本体白：Mr.カラー GX1 クールホワイト ／ 合わせ目：瞬間接着剤＋320→600番")}</details>
+  <details class="sec"><summary class="sum">感想・次回への反省</summary>${area("f_review","",k.review,"うまくいったこと、次に試したいこと")}</details>
   <div class="bar savebar" style="margin-top:10px"><button class="btn" id="save">ノートを保存</button><span class="dirty" id="dirty" hidden>未保存の変更あり</span><span class="spacer"></span><button class="btn ghost sm" id="dup">複製</button><button class="btn ghost sm" id="del">削除</button></div>
   <div class="sec"><h3>写真</h3>${folderBlock(k)}${assets?`<div class="bar"><label class="btn ghost sm" style="display:inline-block;color:var(--ink)">写真を追加<input id="f_photo" type="file" accept="image/*" multiple hidden></label></div>`:"<p class='m'>写真の追加は編集できる人だけが使えます。</p>"}
     <div class="photos">${(k.photos||[]).map(p=>`<figure><img src="${imgUrl(p)}" alt="${esc(k.name)}の写真">${assets?`<button class="btn ghost sm" data-rmphoto="${p}" aria-label="写真を外す">×</button>`:""}</figure>`).join("")||"<span class='m'>まだ写真はありません。</span>"}</div></div>
@@ -382,6 +382,73 @@ const IDEA=[["","判断なし"],["cand","候補"],["adopt","採用"],["skip","�
 const PL={theme:"こんなふうに作りたい",want:"今回やりたいこと",notWant:"今回やらないこと",next:"次にやること"};
 const newRec=()=>({type:"memo",text:"",step:"その他",min:"",date:today(),ref:"",next:"",files:[]});
 let REC=newRec(),recFilter="all";
+// 経過時間はタイマーの回数ではなく開始時刻との差から求める（バックグラウンド対応）。
+const TIMER_KEY="runnerlog-work-timer";
+function readWorkTimer(){
+  try{
+    const state=JSON.parse(localStorage.getItem(TIMER_KEY)||"null");
+    if(!state||typeof state!=="object")return {active:null,pending:{}};
+    const active=state.active;
+    return {active:active&&typeof active.kitId==="string"&&Number.isFinite(active.startedAt)?active:null,
+      pending:state.pending&&typeof state.pending==="object"&&!Array.isArray(state.pending)?state.pending:{}};
+  }catch(e){return {active:null,pending:{}}}
+}
+function saveWorkTimer(state){
+  try{localStorage.setItem(TIMER_KEY,JSON.stringify(state));return true}
+  catch(e){toast("タイマーを保存できません。ブラウザの保存設定・空き容量を確認してください");return false}
+}
+function pruneWorkTimers(){
+  const state=readWorkTimer(),ids=new Set(kits.map(k=>k.id));let changed=false;
+  if(state.active&&!ids.has(state.active.kitId)){state.active=null;changed=true}
+  for(const id of Object.keys(state.pending))if(!ids.has(id)){delete state.pending[id];changed=true}
+  if(changed)saveWorkTimer(state);
+}
+function applyTimerMinutes(id){
+  const state=readWorkTimer();
+  if(Object.hasOwn(state.pending,id)){REC.type="work";REC.min=String(state.pending[id])}
+  else if(state.active?.kitId===id)REC.type="work";
+}
+function paintWorkTimer(){
+  const label=$("#timerStatus"),button=$("#timerToggle");if(!label||!button)return;
+  const state=readWorkTimer(),active=state.active;
+  button.disabled=!!(active&&active.kitId!==openId);
+  button.textContent=active?.kitId===openId?"■ 停止して分を入力":"▶ 作業を開始";
+  if(active){
+    const seconds=Math.floor(Math.max(0,Date.now()-active.startedAt)/1000);
+    const elapsed=`${Math.floor(seconds/3600)}時間${Math.floor(seconds/60)%60}分${seconds%60}秒`;
+    label.textContent=(active.kitId===openId?"計測中：":"別のキットで計測中：")+elapsed;
+  }else label.textContent="停止すると作業時間へ入力します（1分未満は切り上げ）";
+}
+function clearTimerMinutes(id,value){
+  const state=readWorkTimer();
+  if(Object.hasOwn(state.pending,id)&&String(state.pending[id])===String(value)){delete state.pending[id];saveWorkTimer(state)}
+}
+document.addEventListener("click",e=>{
+  if(!e.target.closest("#timerToggle"))return;
+  if(!openId||openId==="__new")return toast("タイマーを使う前にキット名を入れて「ノートを保存」してください");
+  const state=readWorkTimer(),active=state.active;
+  if(active&&active.kitId!==openId)return toast("計測中のキットを開いて停止してください");
+  if(active){
+    const minutes=Math.max(1,Math.ceil(Math.max(0,Date.now()-active.startedAt)/60000));
+    state.pending[openId]=minutes;state.active=null;
+    if(!saveWorkTimer(state))return;
+    REC.type="work";REC.min=String(minutes);renderNote();toast("作業時間に"+minutes+"分を入力しました。内容を入れて記録してください");
+  }else{
+    if(REC.min!==""||Object.hasOwn(state.pending,openId))return toast("入力済みの作業時間を記録するか、空欄にしてから開始してください");
+    state.active={kitId:openId,startedAt:Date.now()};
+    if(!saveWorkTimer(state))return;
+    REC.type="work";renderNote();
+  }
+});
+document.addEventListener("input",e=>{
+  if(e.target.id!=="r_min"||!openId)return;
+  const state=readWorkTimer();
+  if(e.target.value==="")delete state.pending[openId];else state.pending[openId]=e.target.value;
+  saveWorkTimer(state);
+});
+window.addEventListener("storage",e=>{if(e.key===TIMER_KEY)paintWorkTimer()});
+document.addEventListener("visibilitychange",paintWorkTimer);
+setInterval(()=>{if(openId&&!$("#note").hidden)paintWorkTimer()},1000);
 const rtype=l=>l.type||"work";
 const rtLabel=t=>(RT.find(x=>x[0]===t)||[0,"作業"])[1];
 function linkList(t){
@@ -411,12 +478,16 @@ function renderNote(){
   $("#noteBody").innerHTML=`
   <div class="bar"><button class="btn ghost sm" id="back">← 一覧へ</button><span class="spacer"></span>${k.status==="wish"?`<button class="btn sm" id="bought">購入した → 積みへ</button>`:""}<span class="pill s-${k.status}">${ST[k.status]}</span></div>
   <h1 style="margin-top:8px"><small>製作ノート</small>${esc(k.name||"新しいキット")}</h1>
-  <div class="sec"><button class="btn ghost" id="boxOCR" type="button" style="margin-bottom:10px">箱の写真から入力（端末内）</button><div class="grid2">${field("f_name","キット名",k.name)}${field("f_model","型式（任意）",k.model||"","text","例：RX-78-2")}${field("f_jan","JANコード（バーコードの数字）",k.jan||"")}${/^\d{8,14}$/.test(k.jan||"")?`<label>&nbsp;<a class="btn ghost sm" style="display:grid;place-items:center;text-decoration:none;color:var(--ink)" href="https://www.google.com/search?q=${k.jan}" target="_blank" rel="noopener">JANで検索</a></label>`:""}${gradeField(k.grade)}
-    <label>状態<select id="f_status">${Object.entries(ST).map(([v,l])=>`<option value="${v}" ${k.status===v?"selected":""}>${l}</option>`).join("")}</select></label></div></div>
+  <div class="sec"><button class="btn ghost" id="boxOCR" type="button" style="margin-bottom:10px">箱の写真から入力（端末内）</button><div class="grid2">${field("f_name","キット名",k.name)}
+    <label>状態<select id="f_status">${Object.entries(ST).map(([v,l])=>`<option value="${v}" ${k.status===v?"selected":""}>${l}</option>`).join("")}</select></label></div>
+    <details><summary class="sum">型式・JAN・グレード</summary><div class="grid2">
+      ${field("f_model","型式（任意）",k.model||"","text","例：RX-78-2")}${field("f_jan","JANコード（バーコードの数字）",k.jan||"")}${gradeField(k.grade)}
+      ${/^\d{8,14}$/.test(k.jan||"")?`<a class="btn ghost sm" style="display:grid;place-items:center;text-decoration:none;color:var(--ink)" href="https://www.google.com/search?q=${k.jan}" target="_blank" rel="noopener">JANで検索</a>`:""}
+    </div></details></div>
   <div class="sec"><h3>現在の製作プラン</h3><p class="m" style="margin:0 0 10px;font-size:.82rem">どれも空のままでOKです。あとからいつでも書き足したり、変えたりできます。</p><div class="stack">
     ${field("f_theme","こんなふうに作りたい（任意・あとから変更できます）",k.theme||"")}
     ${field("f_next","次にやること（任意・あとから変更できます）",k.next||"")}
-    <details ${k.want||k.notWant||k.refs?"open":""}><summary class="sum">今回やりたいこと・やらないこと・参考資料</summary><div class="stack">
+    <details><summary class="sum">今回やりたいこと・やらないこと・参考資料</summary><div class="stack">
       ${area("f_want","今回やりたいこと",k.want||"")}${area("f_notwant","今回やらないこと",k.notWant||"")}${area("f_refs","参考画像・URL・書籍名とページ",k.refs||"")}${linkList(k.refs)}</div></details>
     <details><summary class="sum">方針を変える（以前の内容と理由を履歴に残す）</summary><div class="stack">
       <label>変える項目<select id="chgField">${Object.entries(PL).map(([v,n])=>`<option value="${v}">${n}</option>`).join("")}</select></label>
@@ -424,6 +495,7 @@ function renderNote(){
       <div><button class="btn ghost sm" id="applyChg">変更して履歴に残す</button></div></div></details></div></div>
   <div class="sec"><h3>＋ 記録</h3><div class="stack">
     <label>種類<select id="r_type">${opt(RT,REC.type)}</select></label>
+    <div class="bar"><button class="btn ghost" id="timerToggle" type="button">▶ 作業を開始</button><span id="timerStatus" class="m num" role="timer" aria-live="off"></span></div>
     <div class="grid2">${REC.type==="work"?`<label>工程<select id="r_step">${steps.map(s=>`<option ${REC.step===s?"selected":""}>${esc(s)}</option>`).join("")}</select></label>${field("r_min","作業時間（分・任意）",REC.min,"number")}`:""}</div>
     <label>内容<textarea id="r_text" placeholder="一言でOK。写真だけでも保存できます">${esc(REC.text)}</textarea></label>
     <details ${REC.ref||REC.next||REC.files.length||REC.date!==today()?"open":""}><summary class="sum">詳細を追加（日付・写真・工程・時間・リンク）</summary><div class="stack">
@@ -438,8 +510,8 @@ function renderNote(){
     ${field("f_price",k.status==="wish"?"予算・定価（円）":"価格（円）",k.price,"number")}${field("f_shop","ショップ",k.shop)}${field("f_bought","購入日",k.bought,"date")}
     ${field("f_started","着工日",k.started,"date")}${field("f_finished","完成日",k.finished,"date")}</div>
     <div style="margin-top:10px">${area("f_memo","メモ",k.memo,"発送予定、再販情報など")}</div></details>
-  <details class="sec" ${k.recipe?"open":""}><summary class="sum">塗装レシピ・使った道具</summary>${area("f_recipe","",k.recipe,"例）本体白：Mr.カラー GX1 クールホワイト")}</details>
-  <details class="sec" ${k.review?"open":""}><summary class="sum">感想・次回への反省</summary>${area("f_review","",k.review,"うまくいったこと、次に試したいこと")}</details>
+  <details class="sec"><summary class="sum">塗装レシピ・使った道具</summary>${area("f_recipe","",k.recipe,"例）本体白：Mr.カラー GX1 クールホワイト")}</details>
+  <details class="sec"><summary class="sum">感想・次回への反省</summary>${area("f_review","",k.review,"うまくいったこと、次に試したいこと")}</details>
   <details class="sec"><summary class="sum">写真・写真フォルダ</summary>${folderBlock(k)}
     ${assets?`<div class="bar"><label class="btn ghost sm" style="display:inline-block;color:var(--ink)">写真を追加<input id="f_photo" type="file" accept="image/*" multiple hidden></label></div>`:""}
     <div class="photos">${(k.photos||[]).map(p=>`<figure><img src="${imgUrl(p)}" alt="${esc(k.name)}の写真">${assets?`<button class="btn ghost sm" data-rmphoto="${p}" aria-label="写真を外す">×</button>`:""}</figure>`).join("")||"<span class='m'>まだ写真はありません。</span>"}</div></details>
@@ -453,9 +525,9 @@ function renderNote(){
     <div><button class="btn ghost sm" id="aiSave">相談結果をメモに保存</button></div>
     <p class="m" style="margin:0;font-size:.8rem">AIの提案は、あなたが「採用」するまで製作プランには入りません。</p></div></details>
   <div class="bar savebar" style="margin-top:10px"><button class="btn" id="save">ノートを保存</button><span class="dirty" id="dirty" hidden>未保存の変更あり</span><span class="spacer"></span><button class="btn ghost sm" id="dup">複製</button><button class="btn ghost sm" id="del">削除</button></div>`;
-  applyDraft(k.id);
+  applyDraft(k.id);paintWorkTimer();
 }
-function openNote(id){openId=id;REC=newRec();recFilter="all";renderNote();$("#note").hidden=false;$("#note").scrollTop=0}
+function openNote(id){openId=id;REC=newRec();applyTimerMinutes(id);recFilter="all";renderNote();$("#note").hidden=false;$("#note").scrollTop=0}
 async function changePlan(field,val,reason){
   if(openId==="__new")return toast("先に「ノートを保存」を押してください");
   const k=kits.find(x=>x.id===openId);if(!k)return;
@@ -520,6 +592,7 @@ document.addEventListener("click",async e=>{
       const up={};if(nx)up.next=nx;
       if(REC.type==="work"&&k.status==="stock"){up.status="building";up.started=k.started||o.date}
       if(Object.keys(up).length)await db.collection("kits").doc(openId).update(up);
+      if(o.type==="work")clearTimerMinutes(k.id,o.minutes);
       REC=newRec();renderNote();toast("記録しました");
     }catch(err){toast("保存できませんでした。入力は残っています")}
   }
@@ -527,41 +600,6 @@ document.addEventListener("click",async e=>{
 
 render();
 
-const IDB={db:null};
-const idbOpen=()=>new Promise((res,rej)=>{const r=indexedDB.open("runnerlog",1);r.onupgradeneeded=()=>["kits","logs","blobs"].forEach(s=>r.result.createObjectStore(s));r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)});
-const tx=(s,m,f)=>IDB.db?new Promise((res,rej)=>{const t=IDB.db.transaction(s,m);const q=f(t.objectStore(s));t.oncomplete=()=>res(q&&q.result);t.onerror=()=>rej(t.error)}):Promise.resolve([]);
-function makeCol(name){
-  let rows=[];const ls=[];
-  const snap=()=>({docs:rows.map(r=>({id:r.id,data:()=>{const{id,...d}=r;return d}}))});
-  const emit=()=>ls.forEach(f=>f(snap()));
-  const save=r=>tx(name,"readwrite",s=>s.put(r,r.id));
-  return{
-    async load(){try{rows=(await tx(name,"readonly",s=>s.getAll()))||[]}catch(e){rows=[]}},
-    onSnapshot(f){ls.push(f);f(snap())},
-    async add(o){const id=name[0]+Date.now().toString(36)+Math.random().toString(36).slice(2,6);const r={...o,id};await save(r);rows.push(r);emit();return{id}},
-    doc(id){return{
-      async update(d){const r=rows.find(x=>x.id===id);if(!r)return;Object.assign(r,d);await save(r);emit()},
-      async delete(){await tx(name,"readwrite",s=>s.delete(id));rows=rows.filter(x=>x.id!==id);emit()}}}
-  };
-}
-async function shrink(file){
-  try{
-    const bmp=await createImageBitmap(file);const sc=Math.min(1,1280/Math.max(bmp.width,bmp.height));
-    const c=document.createElement("canvas");c.width=Math.round(bmp.width*sc);c.height=Math.round(bmp.height*sc);
-    c.getContext("2d").drawImage(bmp,0,0,c.width,c.height);
-    return await new Promise(r=>c.toBlob(b=>r(b||file),"image/jpeg",.8));
-  }catch(e){return file}
-}
-const photoStore={
-  async upload(file){const blob=await shrink(file);const id="p"+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
-    await tx("blobs","readwrite",s=>s.put(blob,id));URLS[id]=URL.createObjectURL(blob);return{id}},
-  async delete(id){await tx("blobs","readwrite",s=>s.delete(id));if(URLS[id]){URL.revokeObjectURL(URLS[id]);delete URLS[id]}}
-};
-async function loadBlobs(){
-  if(!IDB.db)return;
-  await new Promise(res=>{const t=IDB.db.transaction("blobs","readonly");const s=t.objectStore("blobs");const q=s.openCursor();
-    q.onsuccess=()=>{const c=q.result;if(c){URLS[c.key]=URL.createObjectURL(c.value);c.continue()}};t.oncomplete=res;t.onerror=res});
-}
 const LS={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
 async function usage(){
   try{
@@ -580,25 +618,6 @@ function bkCheck(){
   w.hidden=!due;$("#bkBanner").hidden=!due;
   if(!w.hidden)w.textContent=LS.get("runnerlog-backup")?`最後のバックアップから${days}日たっています。記録をコピーして残しましょう。`:`まだバックアップをしていません。記録をコピーして残しましょう。`;
 }
-document.addEventListener("click",async e=>{
-  const t=e.target.closest("#oldBk");if(!t)return;
-  const ta=$("#bkText");
-  if(t.id==="bkCopy"){
-    const data=JSON.stringify({app:"runnerlog",v:1,kits:kits.map(({photos,...k})=>k),logs});
-    ta.value=data;
-    try{await navigator.clipboard.writeText(data);toast("記録をコピーしました")}catch(err){ta.focus();ta.select();toast("枠の中の文字を全部コピーしてください")}
-    LS.set("runnerlog-backup",String(Date.now()));bkCheck();
-  }else{
-    let d;try{d=JSON.parse(ta.value)}catch(err){return toast("記録の形式が正しくありません")}
-    if(!d||d.app!=="runnerlog"||!Array.isArray(d.kits))return toast("ランナーログの記録ではありません");
-    if(t.dataset.sure!=="1"){t.dataset.sure="1";t.textContent=`${d.kits.length}件を追加します。もう一度押すと実行`;return}
-    t.dataset.sure="";t.textContent="貼り付けた記録を復元";
-    const map={};
-    for(const {id,...k} of d.kits){const r=await db.collection("kits").add({...k,photos:[]});map[id]=r.id}
-    for(const {id,kitId,photos,...l} of (d.logs||[])){if(map[kitId]){const lp=await restorePhotos(photos,d.blobs);await db.collection("logs").add({...l,...(lp.length?{photos:lp}:{}),kitId:map[kitId]})}}
-    ta.value="";toast("復元しました");
-  }
-});
 function syncSettings(){
   document.querySelectorAll("[data-s]").forEach(e=>{const v=S[e.dataset.s];if(e.type==="checkbox")e.checked=!!v;else e.value=String(v)});
 }
@@ -615,7 +634,7 @@ document.addEventListener("click",async e=>{
     if(t.dataset.sure!=="1"){t.dataset.sure="1";t.textContent="本当に全部消しますか？もう一度押すと削除";return}
     t.dataset.sure="";t.textContent="すべてのデータを削除";
     try{for(const k of kits)await db.collection("kits").doc(k.id).delete();for(const l of logs)await db.collection("logs").doc(l.id).delete();
-      await tx("blobs","readwrite",s=>s.clear());for(const id of Object.keys(URLS)){URL.revokeObjectURL(URLS[id]);delete URLS[id]}
+      await assets.clear()
       LS.set("runnerlog-backup","");toast("すべて削除しました");usage()}catch(err){toast("削除できませんでした")}
     return;
   }
@@ -624,38 +643,104 @@ document.addEventListener("click",async e=>{
 const blobToData=b=>new Promise(r=>{const f=new FileReader();f.onload=()=>r(f.result);f.readAsDataURL(b)});
 function dataToBlob(u){const [h,b]=u.split(",");const m=/data:(.*?);base64/.exec(h)[1];const bin=atob(b);const a=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)a[i]=bin.charCodeAt(i);return new Blob([a],{type:m})}
 async function restorePhotos(list,blobs){const out=[];
-  for(const pid of list||[]){const u=(blobs||{})[pid];if(!u)continue;const nid="p"+Date.now().toString(36)+Math.random().toString(36).slice(2,6);const b=dataToBlob(u);await tx("blobs","readwrite",s=>s.put(b,nid));URLS[nid]=URL.createObjectURL(b);out.push(nid)}
+  for(const pid of list||[]){const u=(blobs||{})[pid];if(!u)continue;const r=await assets.upload(dataToBlob(u),{original:true});out.push(r.id)}
   return out}
 async function wipeAll(){for(const k of [...kits])await db.collection("kits").doc(k.id).delete();for(const l of [...logs])await db.collection("logs").doc(l.id).delete();
-  await tx("blobs","readwrite",s=>s.clear());for(const id of Object.keys(URLS)){URL.revokeObjectURL(URLS[id]);delete URLS[id]}}
-document.addEventListener("click",async e=>{
-  const t=e.target.closest("#bkCopy,#bkRestore");if(!t)return;
-  const ta=$("#bkText");
-  if(t.id==="bkCopy"){
-    const withP=$("#bkPhotos").checked;
-    const out={app:"runnerlog",v:2,kits:kits.map(k=>withP?k:(({photos,...r})=>r)(k)),logs:withP?logs:logs.map(({photos,...l})=>l)};
-    if(withP){toast("写真をまとめています…");out.blobs={};for(const id of [...kits.flatMap(k=>k.photos||[]),...logs.flatMap(l=>l.photos||[])]){const b=await tx("blobs","readonly",s=>s.get(id));if(b)out.blobs[id]=await blobToData(b)}}
-    const data=JSON.stringify(out);ta.value=data;
-    const mb=(data.length/1048576).toFixed(1);
-    try{await navigator.clipboard.writeText(data);toast(`記録をコピーしました（${mb}MB）`)}catch(err){ta.focus();ta.select();toast(`枠の中の文字（${mb}MB）を全部コピーしてください`)}
-    LS.set("runnerlog-backup",String(Date.now()));bkCheck();
-  }else{
-    let d;try{d=JSON.parse(ta.value)}catch(err){return toast("記録の形式が正しくありません")}
-    if(!d||d.app!=="runnerlog"||!Array.isArray(d.kits))return toast("ランナーログの記録ではありません");
-    const mode=$("#bkMode").value,np=Object.keys(d.blobs||{}).length;
-    if(t.dataset.sure!=="1"){t.dataset.sure="1";t.textContent=`${d.kits.length}件${np?`・写真${np}枚`:""}を${mode==="replace"?"置き換えで":"追加で"}復元。もう一度押すと実行`;return}
-    t.dataset.sure="";t.textContent="貼り付けた記録を復元";
-    try{
-      if(mode==="replace")await wipeAll();
-      const map={};
-      for(const {id,photos,...k} of d.kits){
-        const np2=[];
-        for(const pid of photos||[]){const u=(d.blobs||{})[pid];if(!u)continue;const nid="p"+Date.now().toString(36)+Math.random().toString(36).slice(2,6);const b=dataToBlob(u);await tx("blobs","readwrite",s=>s.put(b,nid));URLS[nid]=URL.createObjectURL(b);np2.push(nid)}
-        const r=await db.collection("kits").add({...k,photos:np2});map[id]=r.id}
-      for(const {id,kitId,photos,...l} of (d.logs||[])){if(map[kitId]){const lp=await restorePhotos(photos,d.blobs);await db.collection("logs").add({...l,...(lp.length?{photos:lp}:{}),kitId:map[kitId]})}}
-      ta.value="";toast("復元しました");usage();
-    }catch(err){toast("復元できませんでした。容量や記録の形式を確認してください（"+((err&&err.message)||err)+"）")}
+  await assets.clear()}
+// 既知の項目を列挙して書き出さず、新しい項目もそのまま往復させる。
+async function exportBackup(withPhotos){
+  const withoutPhotos=({photos,...row})=>row;
+  const out={app:"runnerlog",v:2,kits:kits.map(k=>withPhotos?{...k}:withoutPhotos(k)),logs:logs.map(l=>withPhotos?{...l}:withoutPhotos(l))};
+  if(withPhotos){
+    out.blobs={};
+    for(const id of new Set([...kits,...logs].flatMap(row=>row.photos||[]))){
+      const blob=await assets.read(id);
+      if(!blob)throw new Error("保存写真が見つかりません。写真なしで書き出すか、写真を確認してください");
+      out.blobs[id]=await blobToData(blob);
+    }
   }
+  return JSON.stringify(out);
+}
+function parseBackup(text){
+  const d=JSON.parse(text),obj=x=>x&&typeof x==="object"&&!Array.isArray(x);
+  if(!obj(d)||d.app!=="runnerlog"||![1,2].includes(d.v)||!Array.isArray(d.kits)||!(d.logs===undefined||Array.isArray(d.logs)))throw new Error("ランナーログの対応する記録ではありません");
+  d.logs=d.logs||[];
+  if(d.blobs!==undefined&&!obj(d.blobs))throw new Error("写真の形式が正しくありません");
+  const ids=new Set(),logIds=new Set();
+  const strings=["name","model","jan","grade","status","shop","bought","started","finished","memo","recipe","review","folder","next","theme","want","notWant","refs","date","type","step","ref","idea","kitId"];
+  for(const row of [...d.kits,...d.logs]){
+    if(!obj(row)||typeof row.id!=="string"||!row.id)throw new Error("記録のIDが正しくありません");
+    if(strings.some(k=>row[k]!==undefined&&typeof row[k]!=="string"))throw new Error("記録の文字項目が正しくありません");
+    if(["minutes","price","created"].some(k=>row[k]!==undefined&&(typeof row[k]!=="number"||!Number.isFinite(row[k])||row[k]<0)))throw new Error("記録の数値が正しくありません");
+    if(row.photos!==undefined&&(!Array.isArray(row.photos)||row.photos.some(id=>typeof id!=="string")))throw new Error("写真の参照が正しくありません");
+  }
+  for(const k of d.kits){if(ids.has(k.id)||!Object.hasOwn(ST,k.status))throw new Error("キットの重複IDまたは状態が正しくありません");ids.add(k.id)}
+  for(const l of d.logs){if(logIds.has(l.id)||!ids.has(l.kitId)||(l.type!==undefined&&!RT.some(([v])=>v===l.type))||(l.idea!==undefined&&!IDEA.some(([v])=>v===l.idea)))throw new Error("記録の重複ID・キット参照・種類が正しくありません");logIds.add(l.id)}
+  // 置き換えの削除より前に、含まれている写真をすべてデコードして検証する。
+  for(const u of Object.values(d.blobs||{})){
+    if(typeof u!=="string"||!/^data:image\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/]*={0,2}$/.test(u))throw new Error("写真のデータが正しくありません");
+    dataToBlob(u);
+  }
+  return d;
+}
+async function importBackup(d,mode){
+  const oldKits=[...kits],oldLogs=[...logs],createdKits=[],createdLogs=[],createdPhotos=[];
+  const photoMap=new Map(),kitMap=new Map();
+  const photos=async list=>{
+    const out=[];
+    for(const id of list||[]){
+      if(!Object.hasOwn(d.blobs||{},id))continue; // 写真を含まない旧バックアップにも対応。
+      if(!photoMap.has(id)){
+        const restored=await restorePhotos([id],d.blobs);photoMap.set(id,restored[0]);createdPhotos.push(...restored);
+      }
+      out.push(photoMap.get(id));
+    }
+    return out;
+  };
+  try{
+    // 追加が完了するまでは既存データに触らない（容量不足時も元の記録を守る）。
+    for(const {id,photos:refs,...k} of d.kits){const r=await db.collection("kits").add({...k,photos:await photos(refs)});kitMap.set(id,r.id);createdKits.push(r.id)}
+    for(const {id,kitId,photos:refs,...l} of d.logs){const r=await db.collection("logs").add({...l,kitId:kitMap.get(kitId),photos:await photos(refs)});createdLogs.push(r.id)}
+  }catch(e){
+    for(const id of createdLogs)await db.collection("logs").doc(id).delete();
+    for(const id of createdKits)await db.collection("kits").doc(id).delete();
+    for(const id of createdPhotos)await assets.delete(id);
+    throw e;
+  }
+  if(mode==="replace"){
+    closeNote();
+    for(const l of oldLogs)await db.collection("logs").doc(l.id).delete();
+    for(const k of oldKits){await db.collection("kits").doc(k.id).delete();clearDraft(k.id)}
+    for(const id of new Set([...oldKits,...oldLogs].flatMap(r=>r.photos||[])))await assets.delete(id);
+  }
+}
+let backupBusy=false,backupConfirmation=null;
+function resetBackupConfirmation(){backupConfirmation=null;const b=$("#bkRestore");b.textContent="貼り付けた記録を復元"}
+$("#bkText").addEventListener("input",resetBackupConfirmation);
+$("#bkMode").addEventListener("change",resetBackupConfirmation);
+document.addEventListener("click",async e=>{
+  const t=e.target.closest("#bkCopy,#bkRestore");if(!t||backupBusy)return;
+  if(!db)return toast("読み込みが終わるまでお待ちください");
+  const ta=$("#bkText");
+  if(t.id==="bkRestore"){
+    let d;try{d=parseBackup(ta.value)}catch(err){resetBackupConfirmation();return toast("記録の形式を確認してください："+err.message)}
+    const mode=$("#bkMode").value,key=mode+"\n"+ta.value;
+    if(backupConfirmation!==key){backupConfirmation=key;t.textContent=`${d.kits.length}件を${mode==="replace"?"置き換えで":"追加で"}復元。もう一度押すと実行`;return}
+    resetBackupConfirmation();backupBusy=true;
+    try{await importBackup(d,mode);ta.value="";toast("復元しました");usage()}
+    catch(err){toast("復元できませんでした。容量や記録の形式を確認してください")}
+    finally{backupBusy=false}
+    return;
+  }
+  backupBusy=true;
+  try{
+    const data=await exportBackup($("#bkPhotos").checked);ta.value=data;resetBackupConfirmation();
+    const mb=(new Blob([data]).size/1048576).toFixed(1);
+    try{await navigator.clipboard.writeText(data);toast(`記録をコピーしました（${mb}MB）`)}
+    catch(err){ta.focus();ta.select();toast(`枠の中の文字（${mb}MB）を全部コピーしてください`)}
+    LS.set("runnerlog-backup",String(Date.now()));bkCheck();
+  }catch(err){toast("書き出せませんでした："+err.message)}
+  finally{backupBusy=false}
 });
 
 /* 箱OCR：コード・認識データ・画像処理はすべて同じ配信元と端末内だけで完結。 */
@@ -732,46 +817,136 @@ function openBoxOCR(){
 }
 document.addEventListener("click",e=>{if(e.target.closest("#boxOCR"))openBoxOCR()});
 
-/* バーコード（JAN）読み取り：読めたら重複を確認し、新規ならキットを作ってJANで検索を開く */
+/* バーコード（JAN）：カメラはこのセッションだけが所有し、必ず終了する */
+let activeScan=null,zxingLoad=null;
+function loadZXing(){
+  if(window.ZXing)return Promise.resolve();
+  if(!zxingLoad)zxingLoad=new Promise((res,rej)=>{
+    const sc=document.createElement("script");
+    sc.src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js";
+    const timeout=setTimeout(()=>{sc.remove();rej(new Error("読み取り機能の読み込みがタイムアウトしました"))},15000);
+    sc.onload=()=>{clearTimeout(timeout);res()};
+    sc.onerror=()=>{clearTimeout(timeout);sc.remove();rej(new Error("読み取り機能を読み込めませんでした"))};
+    document.head.appendChild(sc);
+  }).catch(e=>{zxingLoad=null;throw e});
+  return zxingLoad;
+}
 async function scanJan(){
+  if(activeScan)return;
+  if(!window.isSecureContext||!navigator.mediaDevices?.getUserMedia){toast("カメラはHTTPSで開いた対応ブラウザで使えます。JANは手入力もできます");return}
   const ov=document.createElement("div");
-  ov.style.cssText="position:fixed;inset:0;z-index:40;background:#000;display:grid;grid-template-rows:1fr auto";
-  ov.innerHTML='<video playsinline muted style="width:100%;height:100%;object-fit:cover"></video><div style="padding:16px;display:grid;gap:8px;text-align:center;color:#fff"><span>箱のバーコードを枠に映してください</span><button class="btn ghost" id="scanCancel">やめる</button></div>';
+  ov.setAttribute("role","dialog");ov.setAttribute("aria-modal","true");ov.setAttribute("aria-label","バーコード読み取り");
+  ov.style.cssText="position:fixed;inset:0;z-index:40;background:#000;display:grid;grid-template-rows:minmax(0,1fr) auto";
+  ov.innerHTML='<video autoplay playsinline muted style="width:100%;height:100%;object-fit:contain;min-height:0"></video><div style="padding:16px;padding-bottom:max(16px,env(safe-area-inset-bottom));display:grid;gap:8px;text-align:center;color:#fff"><span>箱のバーコードを映してください。読めない場合は明るさや距離を変えてください</span><button class="btn ghost" id="scanCancel">やめる</button></div>';
   document.body.appendChild(ov);const vid=ov.querySelector("video");
   let done=false,stream=null,reader=null,timer=null;
-  const stop=()=>{done=true;clearInterval(timer);if(reader)try{reader.reset()}catch(e){}if(stream)stream.getTracks().forEach(t=>t.stop());ov.remove()};
-  ov.querySelector("#scanCancel").onclick=stop;
-  const onCode=async code=>{
-    if(done)return;stop();
-    const dup=kits.find(k=>k.jan===code);
+  const stopTracks=()=>{if(stream)stream.getTracks().forEach(t=>t.stop());if(vid.srcObject)vid.srcObject.getTracks().forEach(t=>t.stop());vid.srcObject=null};
+  const stop=()=>{
+    if(done)return;done=true;clearTimeout(timer);
+    if(reader)try{reader.reset()}catch(e){}
+    stopTracks();ov.remove();document.removeEventListener("visibilitychange",onHidden);window.removeEventListener("pagehide",stop);
+    if(activeScan===stop)activeScan=null;
+    $("#scanKit").focus();
+  };
+  const onHidden=()=>{if(document.hidden)stop()};
+  activeScan=stop;ov.querySelector("#scanCancel").onclick=stop;ov.querySelector("#scanCancel").focus();
+  document.addEventListener("visibilitychange",onHidden);window.addEventListener("pagehide",stop);
+  const onCode=code=>{
+    code=String(code||"").trim();if(done||!/^\d{8}$|^\d{12,13}$/.test(code))return;
+    // UPC-A と先頭0付きEAN-13は同じ商品として扱う。
+    const normalize=v=>String(v||"").padStart(13,"0");
+    stop();const dup=kits.find(k=>normalize(k.jan)===normalize(code));
     if(dup){toast("すでに登録済みのキットです");openNote(dup.id);return}
     draft={name:"",model:"",jan:code,grade:"HG",status:S.newStatus,price:0,photos:[]};openNote("__new");
-    setTimeout(()=>{const n=$("#f_name");if(n){n.placeholder="検索結果の商品名を入力";n.focus()}},50);
-    toast("JAN "+code+" を読み取りました。検索を開きます");window.open("https://www.google.com/search?q="+code,"_blank","noopener");
+    $("#f_name").placeholder="キット名を入力";
+    toast("JAN "+code+" を読み取りました。キット名を入力して保存してください");
   };
   try{
-    if("BarcodeDetector" in window){
-      const det=new BarcodeDetector({formats:["ean_13","ean_8","upc_a"]});
-      stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}});vid.srcObject=stream;await vid.play();
-      timer=setInterval(async()=>{try{const c=await det.detect(vid);if(c.length)onCode(c[0].rawValue)}catch(e){}},300);
+    let det=null;
+    if("BarcodeDetector" in window)try{
+      const formats=await BarcodeDetector.getSupportedFormats();
+      if(done)return;
+      const usable=["ean_13","ean_8","upc_a"].filter(f=>formats.includes(f));
+      if(usable.length)det=new BarcodeDetector({formats:usable});
+    }catch(e){} // APIが存在してもEAN未対応ならZXingへ。
+    if(!det){await loadZXing();if(done)return}
+    stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:"environment"}}});
+    if(done){stopTracks();return}
+    vid.srcObject=stream;await vid.play();if(done){stopTracks();return}
+    if(det){
+      const detect=async()=>{
+        if(done)return;
+        try{const found=await det.detect(vid);if(!done)for(const c of found){onCode(c.rawValue);if(done)break}}
+        catch(e){if(!done){stop();toast("読み取りが中断されました。もう一度試すかJANを手入力してください")}return}
+        if(!done)timer=setTimeout(detect,300);
+      };detect();
     }else{
-      if(!window.ZXing)await new Promise((res,rej)=>{const sc=document.createElement("script");sc.src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js";sc.onload=res;sc.onerror=rej;document.head.appendChild(sc)});
       reader=new ZXing.BrowserMultiFormatReader();
-      reader.decodeFromConstraints({video:{facingMode:"environment"}},vid,(res)=>{if(res)onCode(res.getText())}).catch(()=>{});
+      await reader.decodeFromStream(stream,vid,(res)=>{if(res)onCode(res.getText())});
+      if(done){reader.reset();stopTracks()}
     }
-  }catch(e){stop();toast("カメラを使えませんでした。カメラの許可を確認してください")}
+  }catch(e){if(done){stopTracks();return}stop();toast(e.name==="NotAllowedError"?"カメラの許可を確認してください。JANは手入力もできます":"カメラ・読み取り機能を使えませんでした。もう一度試すかJANを手入力してください")}
 }
 document.addEventListener("click",e=>{if(e.target.closest("#scanKit")){if(!db)return;scanJan()}});
 document.addEventListener("click",e=>{if(e.target.closest("#seenBtn")){LS.set("runnerlog-seen","1");$("#firstNote").hidden=true}});
-(async()=>{
-  if(!LS.get("runnerlog-seen"))$("#firstNote").hidden=false;
+/* ===== 保存アダプター：本人用に差し替えるのはこの領域と接続先だけ =====
+ * db.collection(name): load済みの add / doc(id).update,delete / onSnapshot
+ * assets: upload(file,{original?}) -> {id}, delete(id), url(id), read(id), clear()
+ * UI・バックアップ処理からIndexedDBや写真の実装を参照しない。
+ */
+async function createLocalStorageAdapter(){
+const IDB={db:null},URLS={};
+const idbOpen=()=>new Promise((res,rej)=>{const r=indexedDB.open("runnerlog",1);r.onupgradeneeded=()=>["kits","logs","blobs"].forEach(s=>r.result.createObjectStore(s));r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)});
+const tx=(s,m,f)=>IDB.db?new Promise((res,rej)=>{const t=IDB.db.transaction(s,m);const q=f(t.objectStore(s));t.oncomplete=()=>res(q&&q.result);t.onerror=()=>rej(t.error)}):Promise.resolve([]);
+function makeCol(name){
+  let rows=[];const ls=[];
+  const snap=()=>({docs:rows.map(r=>({id:r.id,data:()=>{const{id,...d}=r;return d}}))});
+  const emit=()=>ls.forEach(f=>f(snap()));
+  const save=r=>tx(name,"readwrite",s=>s.put(r,r.id));
+  return{
+    async load(){try{rows=(await tx(name,"readonly",s=>s.getAll()))||[]}catch(e){rows=[]}},
+    onSnapshot(f){ls.push(f);f(snap())},
+    async add(o){const id=name[0]+Date.now().toString(36)+Math.random().toString(36).slice(2,6);const r={...o,id};await save(r);rows.push(r);emit();return{id}},
+    doc(id){return{
+      async update(d){const r=rows.find(x=>x.id===id);if(!r)return;Object.assign(r,d);await save(r);emit()},
+      async delete(){await tx(name,"readwrite",s=>s.delete(id));rows=rows.filter(x=>x.id!==id);emit()}}}
+  };
+}
+async function shrink(file){
+  try{
+    const bmp=await createImageBitmap(file);const sc=Math.min(1,1280/Math.max(bmp.width,bmp.height));
+    const c=document.createElement("canvas");c.width=Math.round(bmp.width*sc);c.height=Math.round(bmp.height*sc);
+    c.getContext("2d").drawImage(bmp,0,0,c.width,c.height);
+    return await new Promise(r=>c.toBlob(b=>r(b||file),"image/jpeg",.8));
+  }catch(e){return file}
+}
+const photoStore={
+  url:id=>URLS[id]||"",
+  read:id=>tx("blobs","readonly",s=>s.get(id)),
+  async clear(){await tx("blobs","readwrite",s=>s.clear());for(const id of Object.keys(URLS)){URL.revokeObjectURL(URLS[id]);delete URLS[id]}},
+  async upload(file,{original=false}={}){const blob=original?file:await shrink(file);const id="p"+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+    await tx("blobs","readwrite",s=>s.put(blob,id));URLS[id]=URL.createObjectURL(blob);return{id}},
+  async delete(id){await tx("blobs","readwrite",s=>s.delete(id));if(URLS[id]){URL.revokeObjectURL(URLS[id]);delete URLS[id]}}
+};
+async function loadBlobs(){
+  if(!IDB.db)return;
+  await new Promise(res=>{const t=IDB.db.transaction("blobs","readonly");const s=t.objectStore("blobs");const q=s.openCursor();
+    q.onsuccess=()=>{const c=q.result;if(c){URLS[c.key]=URL.createObjectURL(c.value);c.continue()}};t.oncomplete=res;t.onerror=res});
+}
   try{IDB.db=await idbOpen()}catch(e){toast("この状態では保存できません。プライベートモードを解除してください")}
   const cols={kits:makeCol("kits"),logs:makeCol("logs")};
   await Promise.all([cols.kits.load(),cols.logs.load()]);
   await loadBlobs();
-  db={collection:n=>cols[n]};assets=photoStore;
-  db.collection("kits").onSnapshot(s=>{kits=s.docs.map(d=>({id:d.id,...d.data()}));render();bkCheck();usage()});
+  return {db:{collection:n=>cols[n]},assets:photoStore};
+}
+async function connectStorage(adapter){
+  db=adapter.db;assets=adapter.assets;
+  db.collection("kits").onSnapshot(s=>{kits=s.docs.map(d=>({id:d.id,...d.data()}));pruneWorkTimers();render();bkCheck();usage()});
   db.collection("logs").onSnapshot(s=>{logs=s.docs.map(d=>({id:d.id,...d.data()}));render()});
+}
+(async()=>{
+  if(!LS.get("runnerlog-seen"))$("#firstNote").hidden=false;
+  await connectStorage(await createLocalStorageAdapter());
 })();
 </script>
 
