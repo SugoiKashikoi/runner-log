@@ -192,13 +192,12 @@ const yen=n=>n?"¥"+Number(n).toLocaleString("ja-JP"):"—";
 const today=()=>new Date(Date.now()+9*3600e3).toISOString().slice(0,10);
 function undoToast(t,fn){const e=$("#toast");e.textContent=t+" ";const b=document.createElement("button");b.textContent="元に戻す";b.style.cssText="margin-left:8px;border:0;border-radius:99px;padding:6px 14px;font:inherit;background:var(--accent);color:#fff;cursor:pointer";b.onclick=async()=>{e.hidden=true;await fn()};e.appendChild(b);e.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>e.hidden=true,8000)}
 function toast(t){const e=$("#toast");e.textContent=t;e.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>e.hidden=true,2200)}
-const URLS={};
 const SK="runnerlog-settings";
 const S=Object.assign({theme:"auto",stats:true,stockSum:true,hours:true,newStatus:"stock",sort:"status",bkDays:30},(()=>{try{return JSON.parse(localStorage.getItem(SK)||"{}")}catch(e){return{}}})());
 const saveS=()=>{try{localStorage.setItem(SK,JSON.stringify(S))}catch(e){}};
 const hostTheme=document.documentElement.getAttribute("data-theme");
 function applyTheme(){const r=document.documentElement;const t=S.theme==="auto"?hostTheme:S.theme;t?r.setAttribute("data-theme",t):r.removeAttribute("data-theme")}
-applyTheme();const imgUrl=id=>URLS[id]||"";
+applyTheme();const imgUrl=id=>assets?.url(id)||"";
 
 function renderStats(){
   $("#stats").hidden=!S.stats;$("#statsToggle").textContent=(S.stats?"▾":"▸")+" 集計";
@@ -601,41 +600,6 @@ document.addEventListener("click",async e=>{
 
 render();
 
-const IDB={db:null};
-const idbOpen=()=>new Promise((res,rej)=>{const r=indexedDB.open("runnerlog",1);r.onupgradeneeded=()=>["kits","logs","blobs"].forEach(s=>r.result.createObjectStore(s));r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)});
-const tx=(s,m,f)=>IDB.db?new Promise((res,rej)=>{const t=IDB.db.transaction(s,m);const q=f(t.objectStore(s));t.oncomplete=()=>res(q&&q.result);t.onerror=()=>rej(t.error)}):Promise.resolve([]);
-function makeCol(name){
-  let rows=[];const ls=[];
-  const snap=()=>({docs:rows.map(r=>({id:r.id,data:()=>{const{id,...d}=r;return d}}))});
-  const emit=()=>ls.forEach(f=>f(snap()));
-  const save=r=>tx(name,"readwrite",s=>s.put(r,r.id));
-  return{
-    async load(){try{rows=(await tx(name,"readonly",s=>s.getAll()))||[]}catch(e){rows=[]}},
-    onSnapshot(f){ls.push(f);f(snap())},
-    async add(o){const id=name[0]+Date.now().toString(36)+Math.random().toString(36).slice(2,6);const r={...o,id};await save(r);rows.push(r);emit();return{id}},
-    doc(id){return{
-      async update(d){const r=rows.find(x=>x.id===id);if(!r)return;Object.assign(r,d);await save(r);emit()},
-      async delete(){await tx(name,"readwrite",s=>s.delete(id));rows=rows.filter(x=>x.id!==id);emit()}}}
-  };
-}
-async function shrink(file){
-  try{
-    const bmp=await createImageBitmap(file);const sc=Math.min(1,1280/Math.max(bmp.width,bmp.height));
-    const c=document.createElement("canvas");c.width=Math.round(bmp.width*sc);c.height=Math.round(bmp.height*sc);
-    c.getContext("2d").drawImage(bmp,0,0,c.width,c.height);
-    return await new Promise(r=>c.toBlob(b=>r(b||file),"image/jpeg",.8));
-  }catch(e){return file}
-}
-const photoStore={
-  async upload(file){const blob=await shrink(file);const id="p"+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
-    await tx("blobs","readwrite",s=>s.put(blob,id));URLS[id]=URL.createObjectURL(blob);return{id}},
-  async delete(id){await tx("blobs","readwrite",s=>s.delete(id));if(URLS[id]){URL.revokeObjectURL(URLS[id]);delete URLS[id]}}
-};
-async function loadBlobs(){
-  if(!IDB.db)return;
-  await new Promise(res=>{const t=IDB.db.transaction("blobs","readonly");const s=t.objectStore("blobs");const q=s.openCursor();
-    q.onsuccess=()=>{const c=q.result;if(c){URLS[c.key]=URL.createObjectURL(c.value);c.continue()}};t.oncomplete=res;t.onerror=res});
-}
 const LS={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
 async function usage(){
   try{
@@ -670,7 +634,7 @@ document.addEventListener("click",async e=>{
     if(t.dataset.sure!=="1"){t.dataset.sure="1";t.textContent="本当に全部消しますか？もう一度押すと削除";return}
     t.dataset.sure="";t.textContent="すべてのデータを削除";
     try{for(const k of kits)await db.collection("kits").doc(k.id).delete();for(const l of logs)await db.collection("logs").doc(l.id).delete();
-      await tx("blobs","readwrite",s=>s.clear());for(const id of Object.keys(URLS)){URL.revokeObjectURL(URLS[id]);delete URLS[id]}
+      await assets.clear()
       LS.set("runnerlog-backup","");toast("すべて削除しました");usage()}catch(err){toast("削除できませんでした")}
     return;
   }
@@ -679,10 +643,10 @@ document.addEventListener("click",async e=>{
 const blobToData=b=>new Promise(r=>{const f=new FileReader();f.onload=()=>r(f.result);f.readAsDataURL(b)});
 function dataToBlob(u){const [h,b]=u.split(",");const m=/data:(.*?);base64/.exec(h)[1];const bin=atob(b);const a=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)a[i]=bin.charCodeAt(i);return new Blob([a],{type:m})}
 async function restorePhotos(list,blobs){const out=[];
-  for(const pid of list||[]){const u=(blobs||{})[pid];if(!u)continue;const nid="p"+Date.now().toString(36)+Math.random().toString(36).slice(2,6);const b=dataToBlob(u);await tx("blobs","readwrite",s=>s.put(b,nid));URLS[nid]=URL.createObjectURL(b);out.push(nid)}
+  for(const pid of list||[]){const u=(blobs||{})[pid];if(!u)continue;const r=await assets.upload(dataToBlob(u),{original:true});out.push(r.id)}
   return out}
 async function wipeAll(){for(const k of [...kits])await db.collection("kits").doc(k.id).delete();for(const l of [...logs])await db.collection("logs").doc(l.id).delete();
-  await tx("blobs","readwrite",s=>s.clear());for(const id of Object.keys(URLS)){URL.revokeObjectURL(URLS[id]);delete URLS[id]}}
+  await assets.clear()}
 // 既知の項目を列挙して書き出さず、新しい項目もそのまま往復させる。
 async function exportBackup(withPhotos){
   const withoutPhotos=({photos,...row})=>row;
@@ -690,7 +654,7 @@ async function exportBackup(withPhotos){
   if(withPhotos){
     out.blobs={};
     for(const id of new Set([...kits,...logs].flatMap(row=>row.photos||[]))){
-      const blob=await tx("blobs","readonly",store=>store.get(id));
+      const blob=await assets.read(id);
       if(!blob)throw new Error("保存写真が見つかりません。写真なしで書き出すか、写真を確認してください");
       out.blobs[id]=await blobToData(blob);
     }
@@ -851,15 +815,64 @@ async function scanJan(){
 }
 document.addEventListener("click",e=>{if(e.target.closest("#scanKit")){if(!db)return;scanJan()}});
 document.addEventListener("click",e=>{if(e.target.closest("#seenBtn")){LS.set("runnerlog-seen","1");$("#firstNote").hidden=true}});
-(async()=>{
-  if(!LS.get("runnerlog-seen"))$("#firstNote").hidden=false;
+/* ===== 保存アダプター：本人用に差し替えるのはこの領域と接続先だけ =====
+ * db.collection(name): load済みの add / doc(id).update,delete / onSnapshot
+ * assets: upload(file,{original?}) -> {id}, delete(id), url(id), read(id), clear()
+ * UI・バックアップ処理からIndexedDBや写真の実装を参照しない。
+ */
+async function createLocalStorageAdapter(){
+const IDB={db:null},URLS={};
+const idbOpen=()=>new Promise((res,rej)=>{const r=indexedDB.open("runnerlog",1);r.onupgradeneeded=()=>["kits","logs","blobs"].forEach(s=>r.result.createObjectStore(s));r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)});
+const tx=(s,m,f)=>IDB.db?new Promise((res,rej)=>{const t=IDB.db.transaction(s,m);const q=f(t.objectStore(s));t.oncomplete=()=>res(q&&q.result);t.onerror=()=>rej(t.error)}):Promise.resolve([]);
+function makeCol(name){
+  let rows=[];const ls=[];
+  const snap=()=>({docs:rows.map(r=>({id:r.id,data:()=>{const{id,...d}=r;return d}}))});
+  const emit=()=>ls.forEach(f=>f(snap()));
+  const save=r=>tx(name,"readwrite",s=>s.put(r,r.id));
+  return{
+    async load(){try{rows=(await tx(name,"readonly",s=>s.getAll()))||[]}catch(e){rows=[]}},
+    onSnapshot(f){ls.push(f);f(snap())},
+    async add(o){const id=name[0]+Date.now().toString(36)+Math.random().toString(36).slice(2,6);const r={...o,id};await save(r);rows.push(r);emit();return{id}},
+    doc(id){return{
+      async update(d){const r=rows.find(x=>x.id===id);if(!r)return;Object.assign(r,d);await save(r);emit()},
+      async delete(){await tx(name,"readwrite",s=>s.delete(id));rows=rows.filter(x=>x.id!==id);emit()}}}
+  };
+}
+async function shrink(file){
+  try{
+    const bmp=await createImageBitmap(file);const sc=Math.min(1,1280/Math.max(bmp.width,bmp.height));
+    const c=document.createElement("canvas");c.width=Math.round(bmp.width*sc);c.height=Math.round(bmp.height*sc);
+    c.getContext("2d").drawImage(bmp,0,0,c.width,c.height);
+    return await new Promise(r=>c.toBlob(b=>r(b||file),"image/jpeg",.8));
+  }catch(e){return file}
+}
+const photoStore={
+  url:id=>URLS[id]||"",
+  read:id=>tx("blobs","readonly",s=>s.get(id)),
+  async clear(){await tx("blobs","readwrite",s=>s.clear());for(const id of Object.keys(URLS)){URL.revokeObjectURL(URLS[id]);delete URLS[id]}},
+  async upload(file,{original=false}={}){const blob=original?file:await shrink(file);const id="p"+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+    await tx("blobs","readwrite",s=>s.put(blob,id));URLS[id]=URL.createObjectURL(blob);return{id}},
+  async delete(id){await tx("blobs","readwrite",s=>s.delete(id));if(URLS[id]){URL.revokeObjectURL(URLS[id]);delete URLS[id]}}
+};
+async function loadBlobs(){
+  if(!IDB.db)return;
+  await new Promise(res=>{const t=IDB.db.transaction("blobs","readonly");const s=t.objectStore("blobs");const q=s.openCursor();
+    q.onsuccess=()=>{const c=q.result;if(c){URLS[c.key]=URL.createObjectURL(c.value);c.continue()}};t.oncomplete=res;t.onerror=res});
+}
   try{IDB.db=await idbOpen()}catch(e){toast("この状態では保存できません。プライベートモードを解除してください")}
   const cols={kits:makeCol("kits"),logs:makeCol("logs")};
   await Promise.all([cols.kits.load(),cols.logs.load()]);
   await loadBlobs();
-  db={collection:n=>cols[n]};assets=photoStore;
+  return {db:{collection:n=>cols[n]},assets:photoStore};
+}
+async function connectStorage(adapter){
+  db=adapter.db;assets=adapter.assets;
   db.collection("kits").onSnapshot(s=>{kits=s.docs.map(d=>({id:d.id,...d.data()}));pruneWorkTimers();render();bkCheck();usage()});
   db.collection("logs").onSnapshot(s=>{logs=s.docs.map(d=>({id:d.id,...d.data()}));render()});
+}
+(async()=>{
+  if(!LS.get("runnerlog-seen"))$("#firstNote").hidden=false;
+  await connectStorage(await createLocalStorageAdapter());
 })();
 </script>
 

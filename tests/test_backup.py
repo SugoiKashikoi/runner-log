@@ -33,7 +33,7 @@ with sync_playwright() as p:
       return JSON.stringify(actual)===JSON.stringify(expected)&&photos.length===1&&logs.every(l=>l.kitId===id&&l.photos[0]===photos[0]);
     }''')
     assert page.evaluate('''async()=>{
-      const blob=await tx('blobs','readonly',s=>s.get(kits[0].photos[0]));return blob instanceof Blob && blob.size>0;
+      const blob=await assets.read(kits[0].photos[0]);return blob instanceof Blob && blob.size>0;
     }''')
     page.locator('#openSettings').click()
     bad = page.evaluate("JSON.stringify({...original, logs:'invalid'})")
