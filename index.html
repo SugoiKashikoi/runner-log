@@ -382,6 +382,73 @@ const IDEA=[["","判断なし"],["cand","候補"],["adopt","採用"],["skip","�
 const PL={theme:"こんなふうに作りたい",want:"今回やりたいこと",notWant:"今回やらないこと",next:"次にやること"};
 const newRec=()=>({type:"memo",text:"",step:"その他",min:"",date:today(),ref:"",next:"",files:[]});
 let REC=newRec(),recFilter="all";
+// 経過時間はタイマーの回数ではなく開始時刻との差から求める（バックグラウンド対応）。
+const TIMER_KEY="runnerlog-work-timer";
+function readWorkTimer(){
+  try{
+    const state=JSON.parse(localStorage.getItem(TIMER_KEY)||"null");
+    if(!state||typeof state!=="object")return {active:null,pending:{}};
+    const active=state.active;
+    return {active:active&&typeof active.kitId==="string"&&Number.isFinite(active.startedAt)?active:null,
+      pending:state.pending&&typeof state.pending==="object"&&!Array.isArray(state.pending)?state.pending:{}};
+  }catch(e){return {active:null,pending:{}}}
+}
+function saveWorkTimer(state){
+  try{localStorage.setItem(TIMER_KEY,JSON.stringify(state));return true}
+  catch(e){toast("タイマーを保存できません。ブラウザの保存設定・空き容量を確認してください");return false}
+}
+function pruneWorkTimers(){
+  const state=readWorkTimer(),ids=new Set(kits.map(k=>k.id));let changed=false;
+  if(state.active&&!ids.has(state.active.kitId)){state.active=null;changed=true}
+  for(const id of Object.keys(state.pending))if(!ids.has(id)){delete state.pending[id];changed=true}
+  if(changed)saveWorkTimer(state);
+}
+function applyTimerMinutes(id){
+  const state=readWorkTimer();
+  if(Object.hasOwn(state.pending,id)){REC.type="work";REC.min=String(state.pending[id])}
+  else if(state.active?.kitId===id)REC.type="work";
+}
+function paintWorkTimer(){
+  const label=$("#timerStatus"),button=$("#timerToggle");if(!label||!button)return;
+  const state=readWorkTimer(),active=state.active;
+  button.disabled=!!(active&&active.kitId!==openId);
+  button.textContent=active?.kitId===openId?"■ 停止して分を入力":"▶ 作業を開始";
+  if(active){
+    const seconds=Math.floor(Math.max(0,Date.now()-active.startedAt)/1000);
+    const elapsed=`${Math.floor(seconds/3600)}時間${Math.floor(seconds/60)%60}分${seconds%60}秒`;
+    label.textContent=(active.kitId===openId?"計測中：":"別のキットで計測中：")+elapsed;
+  }else label.textContent="停止すると作業時間へ入力します（1分未満は切り上げ）";
+}
+function clearTimerMinutes(id,value){
+  const state=readWorkTimer();
+  if(Object.hasOwn(state.pending,id)&&String(state.pending[id])===String(value)){delete state.pending[id];saveWorkTimer(state)}
+}
+document.addEventListener("click",e=>{
+  if(!e.target.closest("#timerToggle"))return;
+  if(!openId||openId==="__new")return toast("タイマーを使う前にキット名を入れて「ノートを保存」してください");
+  const state=readWorkTimer(),active=state.active;
+  if(active&&active.kitId!==openId)return toast("計測中のキットを開いて停止してください");
+  if(active){
+    const minutes=Math.max(1,Math.ceil(Math.max(0,Date.now()-active.startedAt)/60000));
+    state.pending[openId]=minutes;state.active=null;
+    if(!saveWorkTimer(state))return;
+    REC.type="work";REC.min=String(minutes);renderNote();toast("作業時間に"+minutes+"分を入力しました。内容を入れて記録してください");
+  }else{
+    if(REC.min!==""||Object.hasOwn(state.pending,openId))return toast("入力済みの作業時間を記録するか、空欄にしてから開始してください");
+    state.active={kitId:openId,startedAt:Date.now()};
+    if(!saveWorkTimer(state))return;
+    REC.type="work";renderNote();
+  }
+});
+document.addEventListener("input",e=>{
+  if(e.target.id!=="r_min"||!openId)return;
+  const state=readWorkTimer();
+  if(e.target.value==="")delete state.pending[openId];else state.pending[openId]=e.target.value;
+  saveWorkTimer(state);
+});
+window.addEventListener("storage",e=>{if(e.key===TIMER_KEY)paintWorkTimer()});
+document.addEventListener("visibilitychange",paintWorkTimer);
+setInterval(()=>{if(openId&&!$("#note").hidden)paintWorkTimer()},1000);
 const rtype=l=>l.type||"work";
 const rtLabel=t=>(RT.find(x=>x[0]===t)||[0,"作業"])[1];
 function linkList(t){
@@ -424,6 +491,7 @@ function renderNote(){
       <div><button class="btn ghost sm" id="applyChg">変更して履歴に残す</button></div></div></details></div></div>
   <div class="sec"><h3>＋ 記録</h3><div class="stack">
     <label>種類<select id="r_type">${opt(RT,REC.type)}</select></label>
+    <div class="bar"><button class="btn ghost" id="timerToggle" type="button">▶ 作業を開始</button><span id="timerStatus" class="m num" role="timer" aria-live="off"></span></div>
     <div class="grid2">${REC.type==="work"?`<label>工程<select id="r_step">${steps.map(s=>`<option ${REC.step===s?"selected":""}>${esc(s)}</option>`).join("")}</select></label>${field("r_min","作業時間（分・任意）",REC.min,"number")}`:""}</div>
     <label>内容<textarea id="r_text" placeholder="一言でOK。写真だけでも保存できます">${esc(REC.text)}</textarea></label>
     <details ${REC.ref||REC.next||REC.files.length||REC.date!==today()?"open":""}><summary class="sum">詳細を追加（日付・写真・工程・時間・リンク）</summary><div class="stack">
@@ -453,9 +521,9 @@ function renderNote(){
     <div><button class="btn ghost sm" id="aiSave">相談結果をメモに保存</button></div>
     <p class="m" style="margin:0;font-size:.8rem">AIの提案は、あなたが「採用」するまで製作プランには入りません。</p></div></details>
   <div class="bar savebar" style="margin-top:10px"><button class="btn" id="save">ノートを保存</button><span class="dirty" id="dirty" hidden>未保存の変更あり</span><span class="spacer"></span><button class="btn ghost sm" id="dup">複製</button><button class="btn ghost sm" id="del">削除</button></div>`;
-  applyDraft(k.id);
+  applyDraft(k.id);paintWorkTimer();
 }
-function openNote(id){openId=id;REC=newRec();recFilter="all";renderNote();$("#note").hidden=false;$("#note").scrollTop=0}
+function openNote(id){openId=id;REC=newRec();applyTimerMinutes(id);recFilter="all";renderNote();$("#note").hidden=false;$("#note").scrollTop=0}
 async function changePlan(field,val,reason){
   if(openId==="__new")return toast("先に「ノートを保存」を押してください");
   const k=kits.find(x=>x.id===openId);if(!k)return;
@@ -520,6 +588,7 @@ document.addEventListener("click",async e=>{
       const up={};if(nx)up.next=nx;
       if(REC.type==="work"&&k.status==="stock"){up.status="building";up.started=k.started||o.date}
       if(Object.keys(up).length)await db.collection("kits").doc(openId).update(up);
+      if(o.type==="work")clearTimerMinutes(k.id,o.minutes);
       REC=newRec();renderNote();toast("記録しました");
     }catch(err){toast("保存できませんでした。入力は残っています")}
   }
@@ -696,7 +765,7 @@ document.addEventListener("click",e=>{if(e.target.closest("#seenBtn")){LS.set("r
   await Promise.all([cols.kits.load(),cols.logs.load()]);
   await loadBlobs();
   db={collection:n=>cols[n]};assets=photoStore;
-  db.collection("kits").onSnapshot(s=>{kits=s.docs.map(d=>({id:d.id,...d.data()}));render();bkCheck();usage()});
+  db.collection("kits").onSnapshot(s=>{kits=s.docs.map(d=>({id:d.id,...d.data()}));pruneWorkTimers();render();bkCheck();usage()});
   db.collection("logs").onSnapshot(s=>{logs=s.docs.map(d=>({id:d.id,...d.data()}));render()});
 })();
 </script>
