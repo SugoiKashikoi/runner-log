@@ -133,6 +133,7 @@ input,select,textarea{background:var(--paper)}
 :root{--glass:rgba(255,255,255,.88)}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--glass:rgba(34,38,50,.9)}}
 :root[data-theme="dark"]{--glass:rgba(34,38,50,.9)}
+summary.sum{min-height:44px;cursor:pointer;padding:10px 0;touch-action:manipulation}summary.sum:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 </style>
 
 <div class="wrap" id="main">
@@ -259,8 +260,8 @@ function renderNote(){
     ${field("f_started","着工日",k.started,"date")}${field("f_finished","完成日",k.finished,"date")}
   </div>
   ${area("f_memo","メモ",k.memo,"発送予定、再販情報など")}</div>
-  <details class="sec" ${k.recipe?"open":""}><summary class="sum">塗装レシピ・使った道具</summary>${area("f_recipe","",k.recipe,"例）本体白：Mr.カラー GX1 クールホワイト ／ 合わせ目：瞬間接着剤＋320→600番")}</details>
-  <details class="sec" ${k.review?"open":""}><summary class="sum">感想・次回への反省</summary>${area("f_review","",k.review,"うまくいったこと、次に試したいこと")}</details>
+  <details class="sec"><summary class="sum">塗装レシピ・使った道具</summary>${area("f_recipe","",k.recipe,"例）本体白：Mr.カラー GX1 クールホワイト ／ 合わせ目：瞬間接着剤＋320→600番")}</details>
+  <details class="sec"><summary class="sum">感想・次回への反省</summary>${area("f_review","",k.review,"うまくいったこと、次に試したいこと")}</details>
   <div class="bar savebar" style="margin-top:10px"><button class="btn" id="save">ノートを保存</button><span class="dirty" id="dirty" hidden>未保存の変更あり</span><span class="spacer"></span><button class="btn ghost sm" id="dup">複製</button><button class="btn ghost sm" id="del">削除</button></div>
   <div class="sec"><h3>写真</h3>${folderBlock(k)}${assets?`<div class="bar"><label class="btn ghost sm" style="display:inline-block;color:var(--ink)">写真を追加<input id="f_photo" type="file" accept="image/*" multiple hidden></label></div>`:"<p class='m'>写真の追加は編集できる人だけが使えます。</p>"}
     <div class="photos">${(k.photos||[]).map(p=>`<figure><img src="${imgUrl(p)}" alt="${esc(k.name)}の写真">${assets?`<button class="btn ghost sm" data-rmphoto="${p}" aria-label="写真を外す">×</button>`:""}</figure>`).join("")||"<span class='m'>まだ写真はありません。</span>"}</div></div>
@@ -411,12 +412,16 @@ function renderNote(){
   $("#noteBody").innerHTML=`
   <div class="bar"><button class="btn ghost sm" id="back">← 一覧へ</button><span class="spacer"></span>${k.status==="wish"?`<button class="btn sm" id="bought">購入した → 積みへ</button>`:""}<span class="pill s-${k.status}">${ST[k.status]}</span></div>
   <h1 style="margin-top:8px"><small>製作ノート</small>${esc(k.name||"新しいキット")}</h1>
-  <div class="sec"><div class="grid2">${field("f_name","キット名",k.name)}${field("f_model","型式（任意）",k.model||"","text","例：RX-78-2")}${field("f_jan","JANコード（バーコードの数字）",k.jan||"")}${/^\d{8,14}$/.test(k.jan||"")?`<label>&nbsp;<a class="btn ghost sm" style="display:grid;place-items:center;text-decoration:none;color:var(--ink)" href="https://www.google.com/search?q=${k.jan}" target="_blank" rel="noopener">JANで検索</a></label>`:""}${gradeField(k.grade)}
-    <label>状態<select id="f_status">${Object.entries(ST).map(([v,l])=>`<option value="${v}" ${k.status===v?"selected":""}>${l}</option>`).join("")}</select></label></div></div>
+  <div class="sec"><div class="grid2">${field("f_name","キット名",k.name)}
+    <label>状態<select id="f_status">${Object.entries(ST).map(([v,l])=>`<option value="${v}" ${k.status===v?"selected":""}>${l}</option>`).join("")}</select></label></div>
+    <details><summary class="sum">型式・JAN・グレード</summary><div class="grid2">
+      ${field("f_model","型式（任意）",k.model||"","text","例：RX-78-2")}${field("f_jan","JANコード（バーコードの数字）",k.jan||"")}${gradeField(k.grade)}
+      ${/^\d{8,14}$/.test(k.jan||"")?`<a class="btn ghost sm" style="display:grid;place-items:center;text-decoration:none;color:var(--ink)" href="https://www.google.com/search?q=${k.jan}" target="_blank" rel="noopener">JANで検索</a>`:""}
+    </div></details></div>
   <div class="sec"><h3>現在の製作プラン</h3><p class="m" style="margin:0 0 10px;font-size:.82rem">どれも空のままでOKです。あとからいつでも書き足したり、変えたりできます。</p><div class="stack">
     ${field("f_theme","こんなふうに作りたい（任意・あとから変更できます）",k.theme||"")}
     ${field("f_next","次にやること（任意・あとから変更できます）",k.next||"")}
-    <details ${k.want||k.notWant||k.refs?"open":""}><summary class="sum">今回やりたいこと・やらないこと・参考資料</summary><div class="stack">
+    <details><summary class="sum">今回やりたいこと・やらないこと・参考資料</summary><div class="stack">
       ${area("f_want","今回やりたいこと",k.want||"")}${area("f_notwant","今回やらないこと",k.notWant||"")}${area("f_refs","参考画像・URL・書籍名とページ",k.refs||"")}${linkList(k.refs)}</div></details>
     <details><summary class="sum">方針を変える（以前の内容と理由を履歴に残す）</summary><div class="stack">
       <label>変える項目<select id="chgField">${Object.entries(PL).map(([v,n])=>`<option value="${v}">${n}</option>`).join("")}</select></label>
@@ -438,8 +443,8 @@ function renderNote(){
     ${field("f_price",k.status==="wish"?"予算・定価（円）":"価格（円）",k.price,"number")}${field("f_shop","ショップ",k.shop)}${field("f_bought","購入日",k.bought,"date")}
     ${field("f_started","着工日",k.started,"date")}${field("f_finished","完成日",k.finished,"date")}</div>
     <div style="margin-top:10px">${area("f_memo","メモ",k.memo,"発送予定、再販情報など")}</div></details>
-  <details class="sec" ${k.recipe?"open":""}><summary class="sum">塗装レシピ・使った道具</summary>${area("f_recipe","",k.recipe,"例）本体白：Mr.カラー GX1 クールホワイト")}</details>
-  <details class="sec" ${k.review?"open":""}><summary class="sum">感想・次回への反省</summary>${area("f_review","",k.review,"うまくいったこと、次に試したいこと")}</details>
+  <details class="sec"><summary class="sum">塗装レシピ・使った道具</summary>${area("f_recipe","",k.recipe,"例）本体白：Mr.カラー GX1 クールホワイト")}</details>
+  <details class="sec"><summary class="sum">感想・次回への反省</summary>${area("f_review","",k.review,"うまくいったこと、次に試したいこと")}</details>
   <details class="sec"><summary class="sum">写真・写真フォルダ</summary>${folderBlock(k)}
     ${assets?`<div class="bar"><label class="btn ghost sm" style="display:inline-block;color:var(--ink)">写真を追加<input id="f_photo" type="file" accept="image/*" multiple hidden></label></div>`:""}
     <div class="photos">${(k.photos||[]).map(p=>`<figure><img src="${imgUrl(p)}" alt="${esc(k.name)}の写真">${assets?`<button class="btn ghost sm" data-rmphoto="${p}" aria-label="写真を外す">×</button>`:""}</figure>`).join("")||"<span class='m'>まだ写真はありません。</span>"}</div></details>
