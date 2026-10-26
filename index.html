@@ -216,7 +216,7 @@ function renderFilters(){
 function renderList(){
   const q=$("#q").value.trim();
   const order={building:0,stock:1,wish:2,done:3};
-  const rows=kits.filter(k=>(filter==="all"||k.status===filter)&&(!q||[k.name,k.grade,k.shop,k.memo].join(" ").toLowerCase().includes(q.toLowerCase())))
+  const rows=kits.filter(k=>(filter==="all"||k.status===filter)&&(!q||[k.name,k.model,k.grade,k.shop,k.memo].join(" ").toLowerCase().includes(q.toLowerCase())))
     .sort((a,b)=>S.sort==="name"?String(a.name).localeCompare(String(b.name),"ja"):S.sort==="bought"?String(b.bought||"").localeCompare(String(a.bought||"")):(order[a.status]-order[b.status])||String(b.bought||"").localeCompare(String(a.bought||"")));
   if(!rows.length){$("#list").innerHTML=`<div class="empty">${kits.length?"条件に合うキットはありません。":"まだキットがありません。「＋ キットを追加」から登録できます。"}</div>`;return}
   $("#list").innerHTML=rows.map(k=>{
@@ -224,9 +224,9 @@ function renderList(){
     const h=logs.filter(l=>l.kitId===k.id).reduce((a,l)=>a+(+l.minutes||0),0);
     const lastLog=logs.filter(l=>l.kitId===k.id).map(l=>l.date).sort().pop();
     const own=k.status==="wish"?0:kits.filter(x=>x.name===k.name&&x.status!=="wish").length;
-    const meta=[k.grade,own>1?"所持"+own+"個":"",k.status==="wish"?(k.price?"予算 "+yen(k.price):""):yen(k.price),k.bought&&k.status!=="wish"?k.bought+" 購入":"",h?(h/60).toFixed(1)+"h 作業":""].filter(Boolean).join(" · ");
+    const meta=[k.model,k.grade,own>1?"所持"+own+"個":"",k.status==="wish"?(k.price?"予算 "+yen(k.price):""):yen(k.price),k.bought&&k.status!=="wish"?k.bought+" 購入":"",h?(h/60).toFixed(1)+"h 作業":""].filter(Boolean).join(" · ");
     return `<button class="kit" data-id="${k.id}">${ph?`<img class="thumb" src="${imgUrl(ph)}" alt="">`:`<span class="thumb">${esc(k.grade||"KIT")}</span>`}
-      <span style="min-width:0"><span class="t">${esc(k.name)}</span><br><span class="m num">${esc(meta)}</span>${k.status==="building"&&(k.next||lastLog)?`<br><span class="m">${k.next?"次："+esc(k.next):""}${lastLog?(k.next?" · ":"")+"最終 "+esc(lastLog):""}</span>`:""}</span>
+      <span style="min-width:0"><span class="t">${esc(k.name||"名称未設定")}</span><br><span class="m num">${esc(meta)}</span>${k.status==="building"&&(k.next||lastLog)?`<br><span class="m">${k.next?"次："+esc(k.next):""}${lastLog?(k.next?" · ":"")+"最終 "+esc(lastLog):""}</span>`:""}</span>
       <span class="pill s-${k.status}">${ST[k.status]||"?"}</span></button>`}).join("");
 }
 function render(){renderStats();renderFilters();renderList();if(openId)renderNote()}
@@ -274,7 +274,7 @@ function renderNote(){
   applyDraft(k.id);
 }
 // 未保存の入力は下書きとして残し、再描画や再読み込みで消えないようにする
-const NF=["f_name","f_gradeSel","f_grade","f_status","f_price","f_shop","f_bought","f_started","f_finished","f_memo","f_recipe","f_review","f_folder","f_next","f_theme","f_want","f_notwant","f_refs"];
+const NF=["f_name","f_model","f_gradeSel","f_grade","f_status","f_price","f_shop","f_bought","f_started","f_finished","f_memo","f_recipe","f_review","f_folder","f_next","f_theme","f_want","f_notwant","f_refs"];
 const DK=id=>"runnerlog-draft-"+id;
 const mem={};
 function getDraft(id){try{return JSON.parse(localStorage.getItem(DK(id))||"null")||mem[id]}catch(e){return mem[id]}}
@@ -302,7 +302,7 @@ const v=id=>{const e=document.getElementById(id);return e?e.value.trim():""};
 
 async function saveKit(){
   if(!db)return toast("保存できません。サインインを確認してください");
-  const d={name:v("f_name")||"名称未設定",grade:v("f_gradeSel")==="__new"?v("f_grade"):v("f_gradeSel"),status:v("f_status"),price:Number(v("f_price"))||0,shop:v("f_shop"),bought:v("f_bought"),started:v("f_started"),finished:v("f_finished"),memo:v("f_memo"),recipe:v("f_recipe"),review:v("f_review"),folder:v("f_folder"),next:v("f_next"),theme:v("f_theme"),want:v("f_want"),notWant:v("f_notwant"),refs:v("f_refs")};
+  const d={name:v("f_name")||"名称未設定",model:v("f_model"),grade:v("f_gradeSel")==="__new"?v("f_grade"):v("f_gradeSel"),status:v("f_status"),price:Number(v("f_price"))||0,shop:v("f_shop"),bought:v("f_bought"),started:v("f_started"),finished:v("f_finished"),memo:v("f_memo"),recipe:v("f_recipe"),review:v("f_review"),folder:v("f_folder"),next:v("f_next"),theme:v("f_theme"),want:v("f_want"),notWant:v("f_notwant"),refs:v("f_refs")};
   const id=openId;try{await db.collection("kits").doc(id).update(d);clearDraft(id);const dd=$("#dirty");if(dd)dd.hidden=true;toast("保存しました")}catch(e){toast("保存できませんでした。容量不足の可能性があります。入力は残っているので、設定でバックアップを取り、不要な写真を消してください")}
 }
 document.addEventListener("click",async e=>{
@@ -326,7 +326,7 @@ document.addEventListener("click",async e=>{
   else if(t.id==="addKit"){
     if(!db)return toast("保存できません。サインインを確認してください");
     const st=filter==="all"?S.newStatus:filter;
-    try{const r=await db.collection("kits").add({name:"新しいキット",grade:"HG",status:st,price:0,photos:[],created:Date.now()});openNote(r.id)}catch(err){toast("追加できませんでした")}
+    try{const r=await db.collection("kits").add({name:"",grade:"HG",status:st,price:0,photos:[],created:Date.now()});openNote(r.id);setTimeout(()=>{const n=$("#f_name");if(n){n.placeholder="キット名を入力";n.focus()}},50)}catch(err){toast("追加できませんでした")}
   }
   else if(t.id==="del"){
     if(t.dataset.sure!=="1"){t.dataset.sure="1";t.textContent="「"+((kits.find(x=>x.id===openId)||{}).name||"")+"」を削除？もう一度押す";return}
@@ -392,8 +392,8 @@ function renderNote(){
   const opt=(arr,cur)=>arr.map(([v,n])=>`<option value="${v}" ${cur===v?"selected":""}>${n}</option>`).join("");
   $("#noteBody").innerHTML=`
   <div class="bar"><button class="btn ghost sm" id="back">← 一覧へ</button><span class="spacer"></span>${k.status==="wish"?`<button class="btn sm" id="bought">購入した → 積みへ</button>`:""}<span class="pill s-${k.status}">${ST[k.status]}</span></div>
-  <h1 style="margin-top:8px"><small>製作ノート</small>${esc(k.name)}</h1>
-  <div class="sec"><div class="grid2">${field("f_name","キット名",k.name)}${gradeField(k.grade)}
+  <h1 style="margin-top:8px"><small>製作ノート</small>${esc(k.name||"新しいキット")}</h1>
+  <div class="sec"><div class="grid2">${field("f_name","キット名",k.name)}${field("f_model","型式（例：RX-78-2）",k.model||"")}${gradeField(k.grade)}
     <label>状態<select id="f_status">${Object.entries(ST).map(([v,l])=>`<option value="${v}" ${k.status===v?"selected":""}>${l}</option>`).join("")}</select></label></div></div>
   <div class="sec"><h3>現在の製作プラン</h3><p class="m" style="margin:0 0 10px;font-size:.82rem">どれも空のままでOKです。あとからいつでも書き足したり、変えたりできます。</p><div class="stack">
     ${field("f_theme","こんなふうに作りたい（任意・あとから変更できます）",k.theme||"")}
