@@ -50,7 +50,7 @@ with sync_playwright() as p:
     page.wait_for_timeout(650)
     assert page.evaluate('calls.max === 1 && calls.detects === 1')
     page.evaluate("detectReady([{rawValue:'4901234567894'},{rawValue:'4901234567894'}])")
-    page.locator('#f_jan').wait_for()
+    page.locator('#f_jan').wait_for(state='attached')
     assert page.locator('#f_jan').input_value() == '4901234567894'
     assert page.evaluate('kits.length') == 0  # scan creates a draft, not a record
     assert page.locator('#scanCancel').count() == 0
@@ -60,7 +60,7 @@ with sync_playwright() as p:
     page.locator('#scanKit').click()
     page.wait_for_function('readResult !== null')
     page.evaluate("readResult({getText:()=> '4901234567894'});readResult({getText:()=> '4901234567894'})")
-    page.locator('#f_jan').wait_for()
+    page.locator('#f_jan').wait_for(state='attached')
     assert page.evaluate('calls.resets') > 0
     assert page.evaluate('kits.length') == 0
     page.context.close()
