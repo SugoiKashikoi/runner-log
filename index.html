@@ -283,14 +283,14 @@ function getDraft(id){try{return JSON.parse(localStorage.getItem(DK(id))||"null"
 function setDraft(id,d){if(d)mem[id]=d;else delete mem[id];try{d?localStorage.setItem(DK(id),JSON.stringify(d)):localStorage.removeItem(DK(id))}catch(e){}}
 const clearDraft=id=>setDraft(id,null);
 function applyDraft(id){
-  if(!id||id==="__new")return;
+  if(!id)return;
   const d=getDraft(id);if(!d)return;
   for(const f of NF){const e=document.getElementById(f);if(e&&f in d)e.value=d[f]}
   if(d.f_gradeSel==="__new")$("#f_gradeBox").hidden=false;
   $("#dirty").hidden=false;
 }
 document.addEventListener("input",e=>{
-  if(!openId||openId==="__new"||!NF.includes(e.target.id))return;
+  if(!openId||!NF.includes(e.target.id))return;
   const d={};for(const f of NF){const el=document.getElementById(f);if(el)d[f]=el.value}
   setDraft(openId,d);$("#dirty").hidden=false;
 });
@@ -315,6 +315,10 @@ async function ensureDoc(){
   creatingKit=(async()=>{
     const r=await db.collection("kits").add(d);
     if(!kits.find(x=>x.id===r.id))kits.push({id:r.id,...d});
+    const recordDraft=readRecordDraft("__new");
+    if(recordDraft)try{localStorage.setItem(RECORD_DRAFT_KEY(r.id),JSON.stringify(recordDraft))}catch(e){}
+    clearDraft("__new");
+    clearRecordDraft("__new");
     if(openId==="__new"){draft=null;openId=r.id}
     return r.id;
   })();
@@ -357,7 +361,7 @@ async function saveRecord(){
     if(photos.length)row.photos=photos;if(rec.ref.trim())row.ref=rec.ref.trim();
     await db.collection("logs").add(row);saved=true;
     if(row.type==="work")clearTimerMinutes(id,row.minutes);
-    if(openId===id&&recordKey(REC)===key)REC=newRec();
+    if(openId===id&&recordKey(REC)===key){REC=newRec();clearRecordDraft(id,"__new")}
     const update={};if(rec.next.trim())update.next=rec.next.trim();
     if(rec.type==="work"&&kit.status==="stock"){update.status="building";update.started=kit.started||row.date}
     if(Object.keys(update).length)await db.collection("kits").doc(id).update(update);
@@ -428,6 +432,21 @@ const IDEA=[["","判断なし"],["cand","候補"],["adopt","採用"],["skip","�
 const PL={theme:"こんなふうに作りたい",want:"今回やりたいこと",notWant:"今回やらないこと",next:"次にやること"};
 const newRec=()=>({type:"memo",text:"",step:"その他",min:"",date:today(),ref:"",next:"",files:[]});
 let REC=newRec(),recFilter="all";
+const RECORD_DRAFT_KEY=id=>"runnerlog-record-draft-"+id;
+function readRecordDraft(id){
+  try{
+    const value=JSON.parse(localStorage.getItem(RECORD_DRAFT_KEY(id))||"null");
+    return value&&typeof value==="object"?{...newRec(),...value,files:[]}:null;
+  }catch(e){return null}
+}
+function saveRecordDraft(id){
+  if(!id)return;
+  const {files,...value}=REC;
+  const empty=!value.text&&!value.min&&!value.ref&&!value.next&&value.type==="memo"&&value.step==="その他"&&value.date===today();
+  try{empty?localStorage.removeItem(RECORD_DRAFT_KEY(id)):localStorage.setItem(RECORD_DRAFT_KEY(id),JSON.stringify(value))}
+  catch(e){toast("記録の下書きを保存できません。ブラウザの保存設定・空き容量を確認してください")}
+}
+function clearRecordDraft(...ids){for(const id of ids)if(id)try{localStorage.removeItem(RECORD_DRAFT_KEY(id))}catch(e){}}
 // 経過時間はタイマーの回数ではなく開始時刻との差から求める（バックグラウンド対応）。
 const TIMER_KEY="runnerlog-work-timer";
 function readWorkTimer(){
@@ -478,12 +497,12 @@ document.addEventListener("click",e=>{
     const minutes=Math.max(1,Math.ceil(Math.max(0,Date.now()-active.startedAt)/60000));
     state.pending[openId]=minutes;state.active=null;
     if(!saveWorkTimer(state))return;
-    REC.type="work";REC.min=String(minutes);renderNote();toast("作業時間に"+minutes+"分を入力しました。内容を入れて記録してください");
+    REC.type="work";REC.min=String(minutes);saveRecordDraft(openId);renderNote();toast("作業時間に"+minutes+"分を入力しました。内容を入れて記録してください");
   }else{
     if(REC.min!==""||Object.hasOwn(state.pending,openId))return toast("入力済みの作業時間を記録するか、空欄にしてから開始してください");
     state.active={kitId:openId,startedAt:Date.now()};
     if(!saveWorkTimer(state))return;
-    REC.type="work";renderNote();
+    REC.type="work";saveRecordDraft(openId);renderNote();
   }
 });
 document.addEventListener("input",e=>{
@@ -547,7 +566,7 @@ function renderNote(){
     <details ${REC.ref||REC.next||REC.files.length||REC.date!==today()?"open":""}><summary class="sum">詳細を追加（日付・写真・工程・時間・リンク）</summary><div class="stack">
       <div class="grid2">${field("r_date","日付",REC.date,"date")}</div>
       ${field("r_ref","参考リンク（任意）",REC.ref)}${field("r_next","次にやること（空欄なら変えません）",REC.next)}
-      ${assets?`<div class="bar"><label class="btn ghost sm" style="display:inline-grid;place-items:center;color:var(--ink)">写真を選ぶ<input id="r_photo" type="file" accept="image/*" multiple hidden></label><span class="m">${REC.files.length?REC.files.length+"枚を選択中":""}</span></div>`:""}</div></details>
+      ${assets?`<div class="bar"><label class="btn ghost sm" style="display:inline-grid;place-items:center;color:var(--ink)">写真を選ぶ<input id="r_photo" type="file" accept="image/*" multiple hidden></label><span class="m">${REC.files.length?REC.files.length+"枚を選択中（写真は再読み込み後に選び直してください）":""}</span></div>`:""}</div></details>
     <div><button class="btn" id="addRec" ${recordSaving?"disabled":""}>${recordSaving?"保存中…":"記録する"}</button></div></div></div>
   <div class="sec"><h3>タイムライン <span class="num">${(mins/60).toFixed(1)}h / ${kl.length}件</span></h3>
     <div class="bar">${[["all","すべて"],["work","作業"],["idea","アイデア"]].map(([v,n])=>`<button class="chip" data-rf="${v}" aria-pressed="${recFilter===v}">${n}</button>`).join("")}</div>
@@ -571,9 +590,9 @@ function renderNote(){
     <div><button class="btn ghost sm" id="aiSave">相談結果をメモに保存</button></div>
     <p class="m" style="margin:0;font-size:.8rem">AIの提案は、あなたが「採用」するまで製作プランには入りません。</p></div></details>
   <div class="bar savebar" style="margin-top:10px"><button class="btn" id="save">ノートを保存</button><span class="dirty" id="dirty" hidden>未保存の変更あり</span><span class="spacer"></span><button class="btn ghost sm" id="dup">複製</button><button class="btn ghost sm" id="del">削除</button></div>`;
-  applyDraft(k.id);paintWorkTimer();
+  applyDraft(openId);paintWorkTimer();
 }
-function openNote(id){openId=id;REC=newRec();applyTimerMinutes(id);recFilter="all";renderNote();$("#note").hidden=false;$("#note").scrollTop=0}
+function openNote(id){openId=id;REC=readRecordDraft(id)||newRec();applyTimerMinutes(id);recFilter="all";renderNote();$("#note").hidden=false;$("#note").scrollTop=0}
 async function changePlan(field,val,reason){
   if(openId==="__new")return toast("先に「ノートを保存」を押してください");
   const k=kits.find(x=>x.id===openId);if(!k)return;
@@ -592,13 +611,13 @@ function aiPrompt(kind){
 }
 document.addEventListener("input",e=>{
   const m={r_text:"text",r_date:"date",r_min:"min",r_ref:"ref",r_next:"next",r_step:"step"}[e.target.id];
-  if(m)REC[m]=e.target.value;
+  if(m){REC[m]=e.target.value;saveRecordDraft(openId)}
 });
 document.addEventListener("change",async e=>{
   const t=e.target;
-  if(t.id==="r_type"){REC.type=t.value;renderNote();return}
-  if(t.id==="r_step"){REC.step=t.value;return}
-  if(t.id==="r_photo"){REC.files=[...t.files];renderNote();return}
+  if(t.id==="r_type"){REC.type=t.value;saveRecordDraft(openId);renderNote();return}
+  if(t.id==="r_step"){REC.step=t.value;saveRecordDraft(openId);return}
+  if(t.id==="r_photo"){REC.files=[...t.files];saveRecordDraft(openId);renderNote();return}
   if(t.id==="chgField"){const k=kits.find(x=>x.id===openId);$("#chgVal").value=(k&&k[t.value])||"";return}
   if(t.dataset&&t.dataset.ldate){try{await db.collection("logs").doc(t.dataset.ldate).update({date:t.value||today()})}catch(err){toast("日付を変えられませんでした")}return}
   if(t.dataset&&t.dataset.lidea){try{await db.collection("logs").doc(t.dataset.lidea).update({idea:t.value})}catch(err){toast("変更できませんでした")}}
