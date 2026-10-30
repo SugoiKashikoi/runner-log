@@ -858,17 +858,17 @@ function openBoxOCR(){
       // 独立したDocumentがWorkerを所有するため、初期化中の中止・失敗でも丸ごと終了できる。
       frame=document.createElement("iframe");frame.hidden=true;frame.title="端末内OCR処理";overlay.appendChild(frame);
       let fail;const failure=new Promise((_,reject)=>{fail=reject});
-      timeout=setTimeout(()=>fail(new Error("読み取りがタイムアウトしました")),60000);
+      const arm=()=>{clearTimeout(timeout);timeout=setTimeout(()=>fail(new Error("応答がありません（60秒）")),60000)};arm();
       await Promise.race([loadBoxOCR(frame),failure]);if(closed)return;
       const base=new URL("vendor/ocr/",location.href).href;
-      worker=await Promise.race([frame.contentWindow.Tesseract.createWorker("jpn+eng",1,{workerPath:base+"worker.min.js",corePath:base,langPath:base+"lang",workerBlobURL:false,gzip:true,logger:m=>{if(m.status==="recognizing text")progress("文字を読み取っています… "+Math.round(m.progress*100)+"％")},errorHandler:e=>fail(new Error(String(e)))}),failure]);
+      worker=await Promise.race([frame.contentWindow.Tesseract.createWorker("jpn+eng",1,{workerPath:base+"worker.min.js",corePath:base,langPath:base+"lang",workerBlobURL:false,gzip:true,logger:m=>{arm();progress((m.status==="recognizing text"?"文字を読み取っています… ":"準備中（初回は約10MBを読み込みます）… ")+Math.round((m.progress||0)*100)+"％")},errorHandler:e=>fail(new Error(String(e)))}),failure]);
       if(closed){await worker.terminate();return}
       const {data}=await Promise.race([worker.recognize(image.toDataURL("image/png")),failure]);if(closed)return;
       const candidates=boxCandidates(data.text||"");
       for(const key of ["name","grade","model"]){overlay.querySelector("#ocr_"+key).value=candidates[key];overlay.querySelector("#ocrUse_"+key).checked=!!candidates[key]&&!v(key==="grade"?"f_gradeSel":"f_"+key)}
       overlay.querySelector("#ocrRaw").value=candidates.text;
       overlay.querySelector("#ocrResult").hidden=false;progress(candidates.text.trim()?"読み取りが終わりました。候補を確認してください":"文字を読み取れませんでした。写真を変えるか手入力してください");
-    }catch(err){progress("読み取れませんでした。写真を変えるか手入力してください。入力済みの内容はそのままです")}
+    }catch(err){progress("読み取れませんでした（"+(err&&err.message||err)+"）。写真を変えるか手入力してください。入力済みの内容はそのままです")}
     finally{clearTimeout(timeout);release();busy=false;if(!closed){e.target.disabled=false;e.target.value=""}}
   };
   overlay.querySelector("#ocrApply").onclick=()=>{
